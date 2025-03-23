@@ -1,10 +1,21 @@
+from itertools import product
 import numpy as np
+
+def dct_scale():
+	scaler = np.zeros((8, 8))
+	for i, j in product(range(8), repeat = 2):
+		scaler[i, j] = 1 / (np.cos(np.pi / 16 * i) * np.cos(np.pi / 16 * j))
+	scaler /= 4
+	scaler[0, 0] *= 4
+	return scaler
+
 def dct_time(i):
 	for j in range(4):
 		i[j::8], i[j + 4::8] = i[j::8] + i[j + 4::8], i[j::8] - i[j + 4::8]
 	for k in range(2):
 		i[k::4], i[k + 2::4] = i[k::4] + i[k + 2::4], i[k::4] - i[k + 2::4]
 	i[::2], i[1::2] = i[::2] + i[1::2], i[::2] - i[1::2]
+	return i
 
 def dct_fwd(vector):
 	v0 = vector[::8] + vector[7::8]
@@ -79,17 +90,12 @@ def dct_bwd(vector):
 	return vector
 
 def dct_3d_fwd(i):
-	for n in range(3):
-		if n == 0:
-			i = dct_time(i)
-		else:
-			i = dct_fwd(i)
-		i = i.transpose((2, 0, 1, 3))
+	i = dct_fwd(dct_fwd(dct_time(i).transpose((2, 0, 1, 3))).transpose((2, 0, 1, 3))).transpose((2, 0, 1, 3))
+	for j, k in product(range(8), repeat = 2):
+		i[:, j, k] *= dct_scale()[j, k]
+	return i
 
 def dct_3d_bwd(i):
-	for n in range(3):
-		if n == 0:
-			i = dct_time(i)
-		else:
-			i = dct_bwd(i)
-		i = i.transpose((2, 0, 1, 3))
+	for j, k in product(range(8), repeat = 2):
+		i[:, j, k] /= dct_scale()[j, k]
+	return dct_bwd(dct_bwd(dct_time(i).transpose((2, 0, 1, 3))).transpose((2, 0, 1, 3))).transpose((2, 0, 1, 3))
