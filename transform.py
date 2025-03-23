@@ -1,100 +1,95 @@
-from threading import Thread
+import numpy as np
+def dct_time(i):
+	for j in range(4):
+		i[j::8], i[j + 4::8] = i[j::8] + i[j + 4::8], i[j::8] - i[j + 4::8]
+	for k in range(2):
+		i[k::4], i[k + 2::4] = i[k::4] + i[k + 2::4], i[k::4] - i[k + 2::4]
+	i[::2], i[1::2] = i[::2] + i[1::2], i[::2] - i[1::2]
 
-def add(a, b, c):
-	a = b + c
-
-def dct_time(coef):
-	v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15 = 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-	for n in range(3):
-		if n == 0:
-			t1 = Thread(target=add, args=(v0, coef[::8], coef[4::8]))
-			t2 = Thread(target=add, args=(v1, coef[1::8], coef[5::8]))
-			t3 = Thread(target=add, args=(v2, coef[2::8], coef[6::8]))
-			t4 = Thread(target=add, args=(v3, coef[3::8], coef[7::8]))
-			t5 = Thread(target=add, args=(v4, coef[::8], -coef[4::8]))
-			t6 = Thread(target=add, args=(v5, coef[1::8], -coef[5::8]))
-			t7 = Thread(target=add, args=(v6, coef[2::8], -coef[6::8]))
-			t8 = Thread(target=add, args=(v7, coef[3::8], -coef[7::8]))
-		if n == 1:
-			t1 = Thread(target=add, args=(v8, v0, v2))
-			t2 = Thread(target=add, args=(v9, v1, v3))
-			t3 = Thread(target=add, args=(v10, v0, -v2))
-			t4 = Thread(target=add, args=(v11, v1, -v3))
-			t5 = Thread(target=add, args=(v12, v4, v6))
-			t6 = Thread(target=add, args=(v13, v5, v7))
-			t7 = Thread(target=add, args=(v14, v4, -v6))
-			t8 = Thread(target=add, args=(v15, v5, -v7))
-		if n == 2:
-			t1 = Thread(target=add, args=(coef[::8], v8, v9))
-			t2 = Thread(target=add, args=(coef[1::8], v8, -v9))
-			t3 = Thread(target=add, args=(coef[2::8], v10, v11))
-			t4 = Thread(target=add, args=(coef[3::8], v10, -v11))
-			t5 = Thread(target=add, args=(coef[4::8], v12, v13))
-			t6 = Thread(target=add, args=(coef[5::8], v12, -v13))
-			t7 = Thread(target=add, args=(coef[6::8], v14, v15))
-			t8 = Thread(target=add, args=(coef[7::8], v14, -v15))
-		t1.start()
-		t2.start()
-		t3.start()
-		t4.start()
-		t5.start()
-		t6.start()
-		t7.start()
-		t8.start()
-		t1.join()
-		t2.join()
-		t3.join()
-		t4.join()
-		t5.join()
-		t6.join()
-		t7.join()
-		t8.join()
-	del v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15
-	return coef
-
-def dct_base(coef):
-	# stage 1
-	v0 = coef[::8] + coef[7::8]
-	v1 = coef[1::8] + coef[6::8]
-	v2 = coef[2::8] + coef[5::8]
-	v3 = coef[3::8] + coef[4::8]
-	v4 = coef[3::8] - coef[4::8]
-	v5 = coef[2::8] - coef[5::8]
-	v6 = coef[1::8] - coef[6::8]
-	v7 = coef[::8] - coef[7::8]
-	# stage 2
+def dct_fwd(vector):
+	v0 = vector[::8] + vector[7::8]
+	v1 = vector[1::8] + vector[6::8]
+	v2 = vector[2::8] + vector[5::8]
+	v3 = vector[3::8] + vector[4::8]
+	v4 = vector[3::8] - vector[4::8]
+	v5 = vector[2::8] - vector[5::8]
+	v6 = vector[1::8] - vector[6::8]
+	v7 = vector[::8] - vector[7::8]
 	v8 = v0 + v3
 	v9 = v1 + v2
 	v10 = v1 - v2
 	v11 = v0 - v3
 	v12 = -v4 - v5
-	v13 = (v5 + v6) * 0.7071067811865476 # √2 / 2
+	v13 = (v5 + v6) * 0.7071067811865476
 	v14 = v6 + v7
-	# stage 3
+	vector[::8] = v8 + v9
+	vector[4::8] = v8 - v9
+	v17 = (v10 + v11) * 0.7071067811865476
+	v18 = (v12 + v14) * 0.38268343236508984
+	v19 = -v12 * 0.5411961001461969 - v18
+	v20 = v14 * 1.3065629648763766 - v18
+	vector[2::8] = v17 + v11
+	vector[6::8] = v11 - v17
 	v23 = v13 + v7
 	v24 = v7 - v13
-	v17 = (v10 + v11) * 0.7071067811865476 # √2 / 2
-	v18 = (v12 + v14) * 0.3826834323650897 # √(2 - √2) / 2
-	# stage 4
-	v19 = -v12 * 0.5411961001461969 - v18 # √(2 - √2) * (√2 / 2)
-	v20 = v14 * 1.3065629648763766 - v18 # √(2 + √2) * (√2 / 2)
-	# stage 5
-	coef[::8] = v8 + v9
-	coef[1::8] = v23 + v20
-	coef[2::8] = v17 + v11
-	coef[3::8] = v24 - v19
-	coef[4::8] = v8 - v9
-	coef[5::8] = v19 + v24
-	coef[6::8] = v11 - v17
-	coef[7::8] = v23 - v20
-	del v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v17, v18, v19, v20, v23, v24
-	return coef
+	vector[5::8] = v19 + v24
+	vector[1::8] = v23 + v20
+	vector[7::8] = v23 - v20
+	vector[3::8] = v24 - v19
+	return vector
 
-def dct_3d_fwd(coef):
-	for n in range(2):
+def dct_bwd(vector):
+	v15 = vector[::8]
+	v26 = vector[1::8]
+	v21 = vector[2::8]
+	v28 = vector[3::8]
+	v16 = vector[4::8]
+	v25 = vector[5::8]
+	v22 = vector[6::8]
+	v27 = vector[7::8]
+	v19 = (v25 - v28) / 2
+	v20 = (v26 - v27) / 2
+	v23 = (v26 + v27) / 2
+	v24 = (v25 + v28) / 2
+	v7  = (v23 + v24) / 2
+	v11 = (v21 + v22) / 2
+	v13 = (v23 - v24) / 2
+	v17 = (v21 - v22) / 2
+	v8 = (v15 + v16) / 2
+	v9 = (v15 - v16) / 2
+	v18 = (v19 - v20) * 0.38268343236508984
+	v12 = -(v19 * 1.3065629648763766 - v18)
+	v14 = -(v18 - v20 * 0.5411961001461969)
+	v6 = v14 - v7
+	v5 = v13 * 1.4142135623730951 - v6
+	v4 = -v5 - v12
+	v10 = v17 * 1.4142135623730951 - v11
+	v0 = (v8 + v11) / 2
+	v1 = (v9 + v10) / 2
+	v2 = (v9 - v10) / 2
+	v3 = (v8 - v11) / 2
+	vector[::8] = (v0 + v7) / 2
+	vector[1::8] = (v1 + v6) / 2
+	vector[2::8] = (v2 + v5) / 2
+	vector[3::8] = (v3 + v4) / 2
+	vector[4::8] = (v3 - v4) / 2
+	vector[5::8] = (v2 - v5) / 2
+	vector[6::8] = (v1 - v6) / 2
+	vector[7::8] = (v0 - v7) / 2
+	return vector
+
+def dct_3d_fwd(i):
+	for n in range(3):
 		if n == 0:
-			coef = dct_time(coef)
+			i = dct_time(i)
 		else:
-			coef = dct_base(coef)
-		coef = coef.transpose((2, 0, 1))
-	
+			i = dct_fwd(i)
+		i = i.transpose((2, 0, 1, 3))
+
+def dct_3d_bwd(i):
+	for n in range(3):
+		if n == 0:
+			i = dct_time(i)
+		else:
+			i = dct_bwd(i)
+		i = i.transpose((2, 0, 1, 3))
