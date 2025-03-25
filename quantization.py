@@ -23,8 +23,8 @@ def median_cut(img_array, color_count):
 	return palette, indexed_image
 
 def gen_aq(q, depth):
-	if depth != depth // 1:
-		print("depth must be integer")
+	if depth != depth // 1 or q != q // 1:
+		print("q and depth must be integer")
 		return
 	if q < depth + 1:
 		print("q must be => depth + 1")
@@ -59,3 +59,13 @@ def gen_aq(q, depth):
 		aq[1::2, 1::2, ::2] -= 1
 		aq[1::2, 1::2, 1::2] -= 1
 	return aq + q
+
+def quantize(semaphore, coef, aq, palette, quantized, g, h, i):
+	semaphore.acquire()
+	palette[:2 ** aq[g, h, i], g, h, i], quantized[g, h::8, i::8] = median_cut(coef[g, h::8, i::8], 2 ** aq[g, h, i])
+	semaphore.release()
+
+def css(semaphore, coef, i, j, k):
+	semaphore.acquire()
+	coef[:, i::8, j::8, k] = 0 if k > 0 and (i > 3 or j > 3) else coef[:, i::8, j::8, k]
+	semaphore.release()
