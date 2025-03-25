@@ -69,3 +69,9 @@ def css(semaphore, coef, i, j, k):
 	semaphore.acquire()
 	coef[:, i::8, j::8, k] = 0 if k > 0 and (i > 3 or j > 3) else coef[:, i::8, j::8, k]
 	semaphore.release()
+
+def dequantize(semaphore, coef, quantized, codebook, h, i, j, k):
+	semaphore.acquire()
+	for n in range(3):
+		coef[h, i::8, j::8, n] = np.choose([quantized[h, i::8, j::8] == l for l in range(k)], [codebook[m, h, i, j, n] for m in range(k)])
+	semaphore.release()
