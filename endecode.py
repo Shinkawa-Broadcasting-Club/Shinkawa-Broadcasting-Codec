@@ -1,6 +1,6 @@
 # sbc internal libraries
 from sbc.quantization import quantize, dequantize, gen_aq, css
-from sbc.io import entropy_coding_fwd, entropy_coding_bwd
+from sbc.sbc_io import entropy_coding_fwd, entropy_coding_bwd, get_source_header
 from sbc.transform import dct_3d_fwd, dct_3d_bwd
 from sbc.vsnpconv import vs_to_np
 from sbc.mt import mt_run
@@ -19,6 +19,8 @@ preset = 22
 path = r"C:\Users\yyuuk\35_N71Tドラ_シャッター.mp4"
 transfer = "709"
 aq_strength = 3
+header = get_source_header(path)
+
 def sbc_encode(path, q, aq_strength, preset, threads, transfer):
 	# restrict threads to boost encoding speed
 	semaphore = Semaphore(threads)
@@ -47,9 +49,8 @@ def sbc_encode(path, q, aq_strength, preset, threads, transfer):
 	palette = np.zeros((2 ** (2 * q - 1), 8, 8, 8, 6))
 	c = coef.shape
 	quantized = np.zeros((8, c[1], c[2]))
-	aq = gen_aq(q, aq_strength)
 	stack_multiple = np.array([[3, 6, 6, 6, 2, 2, 2, 2], [0, 3, 6, 6, 2, 2, 2, 2], [0, 0, 3, 6, 2, 2, 2, 2], [0, 0, 0, 3, 2, 2, 2, 2], [0, 0, 0, 0, 1, 2, 2, 2], [0, 0, 0, 0, 0, 1, 2, 2], [0, 0, 0, 0, 0, 0, 1, 2], [0, 0, 0, 0, 0, 0, 0, 1]])
-	aq *= np.round(stack_multiple)
+	aq = np.round(gen_aq(q, aq_strength) * stack_multiple)
 	coef = coef.transpose((1, 2, 3, 0))
 	coef = np.dstack((coef, coef)).transpose((3, 0, 1, 2))
 	for i, j in product(range(8), repeat = 2):
@@ -75,10 +76,10 @@ def sbc_encode(path, q, aq_strength, preset, threads, transfer):
 	compressed = entropy_coding_fwd(data, preset, threads, s)
 	return compressed + b'EOB', codebook, aq
 
-result, codebook = sbc_encode(path, q, aq_strength, preset, threads, transfer)
+result, codebook, aq = sbc_encode(path, q, aq_strength, preset, threads, transfer)
 
 splited = marked.split(b'EOB')
-data = entropy_coding_bwd(compressed, s)
+data = entropy_coding_bwd(splited, s)
 # unpack array
 data = np.vstack((data, data))
 aq = gen_aq(q, aq_strength).astype(int)
