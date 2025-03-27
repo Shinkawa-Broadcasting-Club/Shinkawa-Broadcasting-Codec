@@ -1,8 +1,8 @@
 from itertools import product
 import numpy as np
-def median_cut(img_array, color_count, layers):
+def median_cut(img_array, color_count):
 	img_shape = img_array.shape
-	flat_img_array = img_array.reshape(-1, layers)
+	flat_img_array = img_array.reshape(-1, 6)
 	cubes = [(flat_img_array, list(range(flat_img_array.shape[0])))]
 	while len(cubes) < color_count:
 		cubes = sorted(cubes, key=lambda cube: float(np.max(np.ptp(cube[0], axis=0))) if cube[0].size > 0 else 0, reverse=True)
@@ -31,9 +31,10 @@ def gen_aq(q, depth):
 		aq[g, h ,i] = depth * (2 / 21 * (g + h + i) - 1)
 	return aq + q
 
-def quantize(semaphore, coef, aq, palette, quantized, g, h, i, layers):
+def quantize(semaphore, coef, aq, palette, quantized, g, h, i):
 	semaphore.acquire()
-	palette[:2 ** aq[g, h, i], g, h, i, :layers], quantized[g, h::8, i::8] = median_cut(coef[g, h::8, i::8], 2 ** aq[g, h, i], layers)
+	col = 2 ** aq[g, h, i]
+	palette[:col, g, h, i], quantized[g, h::8, i::8] = median_cut(coef[g, h::8, i::8], col)
 	semaphore.release()
 
 def css(semaphore, coef, i, j, k):

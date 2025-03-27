@@ -1,6 +1,6 @@
 # sbc internal libraries
 from sbc.quantization import quantize, dequantize, gen_aq, css
-from sbc.sbc_io import entropy_coding_fwd, entropy_coding_bwd, get_source_header
+from sbc.sbc_io import entropy_coding_fwd, entropy_coding_bwd, get_source_header, get_binary_header
 from sbc.transform import dct_3d_fwd, dct_3d_bwd
 from sbc.vsnpconv import vs_to_np
 from sbc.mt import mt_run
@@ -13,20 +13,19 @@ import numpy as np
 import cv2
 core = vs.core
 # settings
-threads = 4
+threads = 20
 q = 4
 preset = 22
-path = r"C:\Users\yyuuk\35_N71Tドラ_シャッター.mp4"
+path = r"C:\Users\sbc\35_N71Tドラ_シャッター.mp4"
+output = r"C:\Users\sbc\35_N71Tドラ_シャッター.sbc"
 transfer = "709"
 aq_strength = 3
-header = get_source_header(path)
 
-def sbc_encode(path, q, aq_strength, preset, threads, transfer):
+def sbc_encode(clip, q, aq_strength, preset, threads, transfer):
 	# restrict threads to boost encoding speed
 	semaphore = Semaphore(threads)
 	# video loading
-	clip = core.lsmas.LWLibavSource(path, format="YUV444P16")
-	video = vs_to_np(clip[1000:1008])
+	video = (vs_to_np(clip) / 1048560 * 2047).astype(np.float16)
 	# padding
 	x = video.shape
 	y = [(8 - (8 % x[a])) % 8 for a in range(3)]
@@ -38,24 +37,22 @@ def sbc_encode(path, q, aq_strength, preset, threads, transfer):
 	del x, y
 	# 3D-DCT
 	coef = dct_3d_fwd(plane.astype(np.float32))
-	coef[::8, ::8, ::8] -= 16776960
-	coef = (coef / 524280 * 2047).astype(np.float16)
+	coef = coef
 	del plane
 	# chroma subsampling
 	thread = [Thread(target = css, args = (semaphore, coef, i, j, k)) for i, j, k in product(range(8), range(8), range(3))]
 	mt_run(thread)
 	del thread
 	# quantize coeffecient
-	palette = np.zeros((2 ** (2 * q - 1), 8, 8, 8, 6))
 	c = coef.shape
 	quantized = np.zeros((8, c[1], c[2]))
-	stack_multiple = np.array([[3, 6, 6, 6, 2, 2, 2, 2], [0, 3, 6, 6, 2, 2, 2, 2], [0, 0, 3, 6, 2, 2, 2, 2], [0, 0, 0, 3, 2, 2, 2, 2], [0, 0, 0, 0, 1, 2, 2, 2], [0, 0, 0, 0, 0, 1, 2, 2], [0, 0, 0, 0, 0, 0, 1, 2], [0, 0, 0, 0, 0, 0, 0, 1]])
-	aq = np.round(gen_aq(q, aq_strength) * stack_multiple)
+	palette = np.zeros((2 ** np.max(aq), 8, 8, 8, 6))
 	coef = coef.transpose((1, 2, 3, 0))
 	coef = np.dstack((coef, coef)).transpose((3, 0, 1, 2))
 	for i, j in product(range(8), repeat = 2):
 		coef[:, i::8, j::8, 3:] = coef[:, 7 - i::8, 7 - j::8, :3]
-	thread = [Thread(target = quantize, args = (semaphore, coef, aq, palette, quantized, g, h, i, 6)) for g, h, i in product(range(8), repeat = 3)]
+	
+	thread = [Thread(target = quantize, args = (semaphore, coef, aq, palette, quantized, g, h, i)) for g, h, i in product(range(8), repeat = 3)]
 	mt_run(thread)
 	del thread, coef
 	codebook = palette.astype(np.float16)
@@ -65,7 +62,7 @@ def sbc_encode(path, q, aq_strength, preset, threads, transfer):
 	del quantized
 	data = data.astype(np.uint8) if q < 5 else data.astype(np.uint16)
 	for g, h, i in product(range(4), range(8), range(8)):
-		data[g::8, h::8, i::8] = data[g::8, h::8, i::8] * (1 << aq[7 - g, 7 - h, 7 - i]) + data[7 - g::8, 7 - h::8, 7 - i::8]
+		data[g::8, h::8, i::8] = data[g::8, h::8, i::8] * (2 ** aq[7 - g, 7 - h, 7 - i]) + data[7 - g::8, 7 - h::8, 7 - i::8]
 	# stacking
 	data[2::8] = data[1::8]
 	data[4::8] = data[2::8]
@@ -76,7 +73,18 @@ def sbc_encode(path, q, aq_strength, preset, threads, transfer):
 	compressed = entropy_coding_fwd(data, preset, threads, s)
 	return compressed + b'EOB', codebook, aq
 
-result, codebook, aq = sbc_encode(path, q, aq_strength, preset, threads, transfer)
+clip = core.lsmas.LWLibavSource(path, format="YUV444P16")
+header = get_source_header(clip)
+aq = np.round(gen_aq(q, aq_strength)).astype(int)
+with open(output, "w") as fileobj:
+    fileobj.write(header)
+
+result = []
+codebook = []
+for n in range(np.ceil(np.frombuffer(header[4:8], np.uint32))[0].astype(np.uint32)):
+	r, c, a = sbc_encode(clip[n:n + 8], q, aq_strength, preset, threads, transfer)
+	result.append(r)
+	codebook.append(c)
 
 splited = marked.split(b'EOB')
 data = entropy_coding_bwd(splited, s)
