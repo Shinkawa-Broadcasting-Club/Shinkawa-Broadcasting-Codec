@@ -16,8 +16,8 @@ core = vs.core
 threads = 20
 q = 4
 preset = 22
-path = r"C:\Users\sbc\35_N71Tドラ_シャッター.mp4"
-output = r"C:\Users\sbc\35_N71Tドラ_シャッター.sbc"
+path = r"C:\Users\yyuuk\35_N71Tドラ_シャッター.mp4"
+output = r"C:\Users\yyuuk\35_N71Tドラ_シャッター.sbc"
 transfer = "709"
 aq_strength = 3
 
@@ -36,8 +36,7 @@ def sbc_encode(clip, q, aq_strength, preset, threads, transfer):
 	plane[:, :, x[2]:-1] = plane[:, :, x[2] - 1:x[2]]
 	del x, y
 	# 3D-DCT
-	coef = dct_3d_fwd(plane.astype(np.float32))
-	coef = coef
+	coef = dct_3d_fwd(plane.astype(np.float32)).astype(np.float16)
 	del plane
 	# chroma subsampling
 	thread = [Thread(target = css, args = (semaphore, coef, i, j, k)) for i, j, k in product(range(8), range(8), range(3))]
@@ -46,16 +45,16 @@ def sbc_encode(clip, q, aq_strength, preset, threads, transfer):
 	# quantize coeffecient
 	c = coef.shape
 	quantized = np.zeros((8, c[1], c[2]))
-	palette = np.zeros((2 ** np.max(aq), 8, 8, 8, 6))
-	coef = coef.transpose((1, 2, 3, 0))
-	coef = np.dstack((coef, coef)).transpose((3, 0, 1, 2))
-	for i, j in product(range(8), repeat = 2):
-		coef[:, i::8, j::8, 3:] = coef[:, 7 - i::8, 7 - j::8, :3]
-	
+	aq = np.round(gen_aq(q, aq_strength / 2)).astype(np.int8)
+	palette = np.zeros((2 ** np.max(aq), 8, 8, 8, 3))
 	thread = [Thread(target = quantize, args = (semaphore, coef, aq, palette, quantized, g, h, i)) for g, h, i in product(range(8), repeat = 3)]
 	mt_run(thread)
 	del thread, coef
-	codebook = palette.astype(np.float16)
+	codebook = np.array([0])
+	for a, b, c, d in product(range(8), range(8), range(8), range(3)):
+		if b < 4 or c < 4 or d == 0:
+			codebook = np.concatenate([codebook, palette[:, a, b, c, d]])
+	codebook = codebook[1:].astype(np.float16)
 	del palette
 	# pack array
 	data = quantized.copy()
@@ -70,48 +69,49 @@ def sbc_encode(clip, q, aq_strength, preset, threads, transfer):
 	data = data[::2]
 	s = data.shape
 	# entropy coding
-	compressed = entropy_coding_fwd(data, preset, threads, s)
-	return compressed + b'EOB', codebook, aq
+	compressed = entropy_coding_fwd(data, codebook, preset, threads, s)
+	return compressed + b'EOB'
 
-clip = core.lsmas.LWLibavSource(path, format="YUV444P16")
-header = get_source_header(clip)
-aq = np.round(gen_aq(q, aq_strength)).astype(int)
-with open(output, "w") as fileobj:
-    fileobj.write(header)
+def sbc_encoder(path, q, aq_strength, output):
+	clip = core.lsmas.LWLibavSource(path, format="YUV444P16")
+	header = get_source_header(clip)
+	aq = np.round(gen_aq(q, aq_strength / 2)).astype(np.int8).tobytes()
+	with open(output, "wb") as f:
+		f.write(header)
+		f.write(aq)
+	for n in range(np.ceil(np.frombuffer(header[4:8], np.uint32) / 8)[0].astype(np.uint32)):
+		r = sbc_encode(clip[n:n + 8], q, aq_strength, preset, threads, transfer)
+		with open(output, "ab") as f:
+			f.write(r)
 
-result = []
-codebook = []
-for n in range(np.ceil(np.frombuffer(header[4:8], np.uint32))[0].astype(np.uint32)):
-	r, c, a = sbc_encode(clip[n:n + 8], q, aq_strength, preset, threads, transfer)
-	result.append(r)
-	codebook.append(c)
+def sbc_decoder(path, play):
+	with open(path, "rb") as f:
+		f.read(12)
 
-splited = marked.split(b'EOB')
-data = entropy_coding_bwd(splited, s)
-# unpack array
-data = np.vstack((data, data))
-aq = gen_aq(q, aq_strength).astype(int)
-for g, h, i in product(range(4), range(8), range(8)):
-	n = (2 ** aq[7 - g, 7 - h, 7 - i].astype(np.uint16))
-	data[g::8, h::8, i::8] = data[g::8, h::8, i::8] // n
-	data[g + 4::8, h::8, i::8] = data[g + 4::8, h::8, i::8] - data[g::8, h::8, i::8] * n
-
-quantized = data.copy()
-del data
-# dequantize coeffecient
-s = quantized.shape
-coef = np.zeros((8, s[1], s[2], 3)).astype(np.float16)
-thread = [Thread(target = dequantize, args = (coef, quantized, codebook, h, i, j)) for h, i, j in product(range(8), repeat = 3)]
-mt_run(thread)
-del quantized, thread
-# 3D-IDCT
-coef = dct_3d_bwd(coef.astype(np.float32) * 1048560 / 2047)
-# normalize coefficient and convert to 16-bit integer
-prev = YCbCr_to_RGB(np.clip(coef // 8, a_min = 0, a_max = 65535).astype(np.uint16)[:, :clip.height, :clip.width], in_bits = 16).astype(np.uint16)
-del coef
-fps = int(1000 / clip.fps.numerator * clip.fps.denominator)
-for e in range(len(prev)):
-	cv2.imshow('image window', prev[e])
-	cv2.waitKey(fps)
-
-cv2.destroyAllWindows()
+def sbc_decode(marked, s, aq):
+	splited = marked.split(b'EOB')
+	data = entropy_coding_bwd(splited, s)
+	# unpack array
+	data = np.vstack((data, data))
+	for g, h, i in product(range(4), range(8), range(8)):
+		n = (2 ** aq[7 - g, 7 - h, 7 - i].astype(np.uint16))
+		data[g::8, h::8, i::8] = data[g::8, h::8, i::8] // n
+		data[g + 4::8, h::8, i::8] = data[g + 4::8, h::8, i::8] - data[g::8, h::8, i::8] * n
+	quantized = data.copy()
+	del data
+	# dequantize coeffecient
+	s = quantized.shape
+	coef = np.zeros((8, s[1], s[2], 3)).astype(np.float16)
+	thread = [Thread(target = dequantize, args = (coef, quantized, codebook, h, i, j)) for h, i, j in product(range(8), repeat = 3)]
+	mt_run(thread)
+	del quantized, thread
+	# 3D-IDCT
+	coef = dct_3d_bwd(coef.astype(np.float32) * 1048560 / 2047)
+	# normalize coefficient and convert to 16-bit integer
+	prev = YCbCr_to_RGB(np.clip(coef // 8, a_min = 0, a_max = 65535).astype(np.uint16)[:, :clip.height, :clip.width], in_bits = 16).astype(np.uint16)
+	del coef
+	fps = int(1000 / clip.fps.numerator * clip.fps.denominator)
+	for e in range(len(prev)):
+		cv2.imshow('image window', prev[e])
+		cv2.waitKey(fps)
+	cv2.destroyAllWindows()

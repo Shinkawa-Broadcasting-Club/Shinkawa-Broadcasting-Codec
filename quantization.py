@@ -2,7 +2,7 @@ from itertools import product
 import numpy as np
 def median_cut(img_array, color_count):
 	img_shape = img_array.shape
-	flat_img_array = img_array.reshape(-1, 6)
+	flat_img_array = img_array.reshape(-1, 3)
 	cubes = [(flat_img_array, list(range(flat_img_array.shape[0])))]
 	while len(cubes) < color_count:
 		cubes = sorted(cubes, key=lambda cube: float(np.max(np.ptp(cube[0], axis=0))) if cube[0].size > 0 else 0, reverse=True)
