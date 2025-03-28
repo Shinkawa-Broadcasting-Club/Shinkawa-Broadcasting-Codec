@@ -13,8 +13,8 @@ def get_source_header(clip):
 		return np.array([index[1], index[2], index[4]]).tobytes()
 
 def get_binary_header(binary):
-	index = np.frombuffer(binary[:3].to_bytes(), np.uint32)
-	return np.array([index[0] >> 16, np.bitwise_and(index[0], 255), index[1], index[2] >> 16, np.bitwise_and(index[2], 255)])
+	index = np.frombuffer(binary, np.uint32)
+	return np.array([index[0] >> 16, np.bitwise_and(index[0], 65535), index[1], index[2] >> 16, np.bitwise_and(index[2], 65535)])
 
 def entropy_coding_fwd(data, codebook, preset, threads, s):
 	data = np.dsplit(data, s[2])

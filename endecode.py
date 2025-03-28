@@ -11,13 +11,14 @@ from itertools import product
 import vapoursynth as vs
 import numpy as np
 import cv2
+import os
 core = vs.core
 # settings
 threads = 20
 q = 4
 preset = 22
-path = r"C:\Users\yyuuk\35_N71Tドラ_シャッター.mp4"
-output = r"C:\Users\yyuuk\35_N71Tドラ_シャッター.sbc"
+path = r"C:\Users\sbc\35_N71Tドラ_シャッター.mp4"
+output = r"C:\Users\sbc\35_N71Tドラ_シャッター.sbc"
 transfer = "709"
 aq_strength = 3
 
@@ -85,8 +86,13 @@ def sbc_encoder(path, q, aq_strength, output):
 			f.write(r)
 
 def sbc_decoder(path, play):
-	with open(path, "rb") as f:
-		f.read(12)
+	None
+
+
+with open(output, "rb") as f:
+	header = f.read(524)
+	index = get_binary_header(header)
+	end = f.read(index[0] * index[1])
 
 def sbc_decode(marked, s, aq):
 	splited = marked.split(b'EOB')
