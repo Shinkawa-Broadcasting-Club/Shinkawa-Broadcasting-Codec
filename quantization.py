@@ -22,13 +22,13 @@ def median_cut(img_array, color_count):
 	indexed_image = quantized_indices.reshape(img_shape[0], img_shape[1])
 	return palette, indexed_image
 
-def gen_aq(q, depth):
-	if q < depth + 1:
-		print("q must be => depth + 1")
+def gen_aq(q):
+	if q != int(q):
+		print("q must be integer")
 		return
 	aq = np.zeros((8, 8, 8))
 	for g, h, i in product(range(8), repeat = 3):
-		aq[g, h ,i] = depth * (2 / 21 * (g + h + i) - 1)
+		aq[7 - g, 7 - h ,7 - i] = (q - 1) * (2 / 21 * (g + h + i) - 1) / 2
 	return aq + q
 
 def quantize(semaphore, coef, aq, palette, quantized, g, h, i):

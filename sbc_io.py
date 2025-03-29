@@ -1,4 +1,4 @@
-from zstd import ZSTD_compress, ZSTD_uncompress
+from zstd import ZSTD_compress
 import vapoursynth as vs
 import numpy as np
 core = vs.core
@@ -24,12 +24,3 @@ def entropy_coding_fwd(data, codebook, preset, threads, s):
 	data = np.concatenate([data, codebook])
 	compressed = ZSTD_compress(data, preset, threads)
 	return compressed
-
-def entropy_coding_bwd(compressed, s):
-	decompressed = ZSTD_uncompress(compressed)
-	data = np.frombuffer(decompressed, dtype = np.uint8)
-	data = np.split(data, s[1])
-	data = np.stack(data, axis=-1)
-	data = np.split(data, s[2])
-	data = np.stack(data, axis=-1)
-	return data
