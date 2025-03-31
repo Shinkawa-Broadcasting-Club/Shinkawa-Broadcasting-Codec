@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sbc_api
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./app:/app
+    environment:
+      - FLASK_ENV=development
+    command: flask run --host=0.0.0.0 --port=8080

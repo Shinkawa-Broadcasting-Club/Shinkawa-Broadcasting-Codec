@@ -1,0 +1,7 @@
+Flask
+vapoursynth
+numpy
+opencv-python
+zstandard
+vapoursynth
+colour-science
