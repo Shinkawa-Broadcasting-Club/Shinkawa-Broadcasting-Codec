@@ -1,69 +1,38 @@
-FROM ubuntu:22.04
+FROM debian:trixie-slim
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install Packages
-RUN apt-get update && apt-get install -y \
+# Install Debian Packages
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     autoconf \
     automake \
     libtool \
     pkg-config \
-    curl \
     git \
-    xz-utils \
-    nasm \
-    yasm \
-    cmake \
-    libevent-dev \
-    libjpeg-dev \
-    libgif-dev \
-    libpng-dev \
-    libwebp-dev \
-    libmagickcore-6.q16-6-extra \
-    libmagickwand-6.q16-6 \
-    libmemcached-dev \
-    zlib1g-dev \
-    libopencv-dev \
-    ocl-icd-libopencl1 \
-    opencl-headers \
-    libboost-filesystem-dev \
-    libboost-system-dev \
-    python3-dev \
-    cython3 \
     wget \
-    ffmpeg \
-    software-properties-common \
-    && apt-get clean
+    python3-dev \
+    python3-pip \
+    python3-venv \
+    cython3 \
+    libzimg2 \
+    libzimg-dev \
+    ca-certificates \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Install Latest libstdc++6
-RUN add-apt-repository ppa:ubuntu-toolchain-r/test -y && \
-apt-get update && \
-apt-get install -y libstdc++6
-
-# Install zimg
-RUN wget http://ftp.jp.debian.org/debian/pool/main/z/zimg/libzimg2_3.0.5+ds1-1+b2_amd64.deb && \
-    dpkg -i libzimg2_3.0.5+ds1-1+b2_amd64.deb && \
-    rm libzimg2_3.0.5+ds1-1+b2_amd64.deb
-
-RUN wget http://ftp.jp.debian.org/debian/pool/main/z/zimg/libzimg-dev_3.0.5+ds1-1+b2_amd64.deb && \
-    dpkg -i libzimg-dev_3.0.5+ds1-1+b2_amd64.deb && \
-    rm libzimg-dev_3.0.5+ds1-1+b2_amd64.deb
-
-# Install Vapoursynth
+# Install VapourSynth
 RUN git clone https://github.com/vapoursynth/vapoursynth.git /usr/src/vapoursynth && \
     cd /usr/src/vapoursynth && \
     ./autogen.sh && \
     ./configure && \
-    make -j4 && \
+    make -j$(nproc) && \
     make install && \
-    ldconfig && \
-    python3 ./setup.py build && \
-    python3 ./setup.py install
+    ldconfig
 
-# Initialize Python
+# Initialize Python environment
 WORKDIR /app
+RUN python3 -m venv /app/venv
 COPY ./app /app
-RUN pip3 install --no-cache-dir -r /app/requirements.txt
+RUN /app/venv/bin/pip install --no-cache-dir -r /app/requirements.txt
 
-# Run Flask
-CMD ["python3", "api.py"]
+# Run Flask App
+CMD ["/app/venv/bin/python", "api.py"]
