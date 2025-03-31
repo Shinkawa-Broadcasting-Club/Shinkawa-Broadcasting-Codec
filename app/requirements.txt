@@ -5,3 +5,8 @@ opencv-python
 zstandard
 vapoursynth
 colour-science
+uvicorn
+zstd
+matplotlib
+opencv-contrib-python
+python-multipart

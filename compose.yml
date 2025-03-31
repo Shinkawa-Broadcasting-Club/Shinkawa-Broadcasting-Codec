@@ -2,10 +2,10 @@ services:
   app:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: app/Dockerfile
     container_name: sbc_api
     ports:
-      - "8080:8080"
+      - "8080:8000"
     volumes:
       - ./app:/app
     environment:

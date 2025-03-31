@@ -1,9 +1,9 @@
 # sbc internal libraries
-from sbc.quantization import quantize, dequantize, gen_aq, css
-from sbc.sbc_io import entropy_coding_fwd, get_source_header, get_binary_header
-from sbc.transform import dct_3d_fwd, dct_3d_bwd
-from sbc.vsnpconv import vs_to_np
-from sbc.mt import mt_run
+from quantization import quantize, dequantize, gen_aq, css
+from sbc_io import entropy_coding_fwd, get_source_header, get_binary_header
+from transform import dct_3d_fwd, dct_3d_bwd
+from vsnpconv import vs_to_np
+from mt import mt_run
 # external libraries
 from threading import Thread, Semaphore
 from zstd import ZSTD_uncompress
@@ -18,8 +18,8 @@ core = vs.core
 threads = 4
 q = 4
 preset = 22
-path = r"C:\Users\yyuuk\35_N71Tドラ_シャッター.mp4"
-output = r"C:\Users\yyuuk\35_N71Tドラ_シャッター.sbc"
+path = ""
+output = ""
 transfer = "709"
 aq_strength = 3
 
@@ -133,7 +133,7 @@ def sbc_decoder(path, play):
 	return 
 
 #sbc_encoder(path, q, output, transfer)
-sbc_decoder(output, 0)
+#sbc_decoder(output, 0)
 
 def play(coef, clip):
 	# normalize coefficient and convert to 16-bit integer
