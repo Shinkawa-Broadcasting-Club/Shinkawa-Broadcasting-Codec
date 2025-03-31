@@ -1,4 +1,4 @@
-Flask
+fastapi
 vapoursynth
 numpy
 opencv-python

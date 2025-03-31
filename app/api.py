@@ -1,53 +1,62 @@
-from flask import Flask, request, jsonify
-from sbc.endecode import sbc_encoder as SbcEncoder, sbc_decoder as SbcDecoder
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException
+from fastapi.responses import JSONResponse
+from endecode import sbc_encoder as SbcEncoder, sbc_decoder as SbcDecoder
 import os
 import tempfile
+from typing import Optional
 
-#Define Flask
-App = Flask(__name__)
+# Define FastAPI
+app = FastAPI()
 
-#Endpoint [POST] /encode
-@App.route('/encode', methods=['POST'])
-def Encode():
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file part in the request'}), 400
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
-    quality = request.form.get('q', 4, type=int)
-    transferType = request.form.get('transfer', '709')
+# Endpoint [POST] /encode
+@app.post('/encode')
+async def encode(
+    file: UploadFile = File(...),
+    q: int = Form(4),
+    transfer: str = Form('709')
+):
+    if not file.filename:
+        raise HTTPException(status_code=400, detail='No selected file')
+    
     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tempInput:
         inputPath = tempInput.name
-        file.save(inputPath)
+        content = await file.read()
+        with open(inputPath, 'wb') as f:
+            f.write(content)
+    
     outputPath = tempfile.mktemp(suffix=".sbc")
     try:
-        SbcEncoder(inputPath, quality, outputPath, transferType)
-        return jsonify({'message': 'Encoding completed', 'outputPath': outputPath})
+        SbcEncoder(inputPath, q, outputPath, transfer)
+        return {"message": "Encoding completed", "outputPath": outputPath}
     except Exception as error:
-        return jsonify({'error': str(error)}), 500
+        raise HTTPException(status_code=500, detail=str(error))
     finally:
         os.remove(inputPath)
 
-#Endpoint [POST] /decode
-@App.route('/decode', methods=['POST'])
-def Decode():
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file part in the request'}), 400
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
-    playOption = request.form.get('play', 0, type=int)
+# Endpoint [POST] /decode
+@app.post('/decode')
+async def decode(
+    file: UploadFile = File(...),
+    play: int = Form(0)
+):
+    if not file.filename:
+        raise HTTPException(status_code=400, detail='No selected file')
+    
     with tempfile.NamedTemporaryFile(delete=False, suffix=".sbc") as tempInput:
         inputPath = tempInput.name
-        file.save(inputPath)
+        content = await file.read()
+        with open(inputPath, 'wb') as f:
+            f.write(content)
+    
     try:
-        SbcDecoder(inputPath, playOption)
-        return jsonify({'message': 'Decoding completed'})
+        SbcDecoder(inputPath, play)
+        return {"message": "Decoding completed"}
     except Exception as error:
-        return jsonify({'error': str(error)}), 500
+        raise HTTPException(status_code=500, detail=str(error))
     finally:
         os.remove(inputPath)
 
-#Run Flask
-if __name__ == '__main__':
-    App.run(host='0.0.0.0', port=8080, debug=True)
+# Run FastAPI app
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8080)

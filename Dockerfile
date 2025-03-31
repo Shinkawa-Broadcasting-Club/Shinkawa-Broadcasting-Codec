@@ -30,9 +30,12 @@ RUN git clone https://github.com/vapoursynth/vapoursynth.git /usr/src/vapoursynt
 
 # Initialize Python environment
 WORKDIR /app
-RUN python3 -m venv /app/venv
-COPY ./app /app
-RUN /app/venv/bin/pip install --no-cache-dir -r /app/requirements.txt
+RUN python3 -m venv /venv
+ENV PATH="/venv/bin:$PATH"
 
-# Run Flask App
-CMD ["/app/venv/bin/python", "api.py"]
+COPY ./app /app
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Run FastAPI
+EXPOSE 8000
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
