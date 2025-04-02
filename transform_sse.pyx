@@ -13,7 +13,6 @@ cdef extern from *:
 	__m64 _mm_set_pi16(short e3, short e2, short e1, short e0)
 	__m128i _mm_loadu_si64(const void *mem_addr)
 	__m128i _mm_cvtepu16_epi32(__m128i a)
-	__m128i _mm_movpi64_epi64(__m64 a)
 	__m128i _mm_set_epi16(short e7, short e6, short e5, short e4, short e3, short e2, short e1, short e0)
 	__m128i _mm_set_epi32(int e3, int e2, int e1, int e0)
 	__m128i _mm_slli_epi32(__m128i a, int imm8)
@@ -28,13 +27,14 @@ cdef extern from *:
 	__m128 _mm_sub_ps(__m128 a, __m128 b)
 	__m128 _mm_mul_ps(__m128 a, __m128 b)
 
+@cython.nogil
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cdef dct_time_fwd(cnp.ndarray[cnp.float32_t, ndim = 1] a):
 	cdef:
 		__m128 n0, n1, n2, n3, n4, n5, n6, n7, v0, v1, v2, v3, v4, v5, v6, v7
 		float* data = &a[0]
-		np.ndarray[np.float32_t, ndim = 1] out = np.empty(32, dtype = np.float32)
+		cnp.ndarray[cnp.float32_t, ndim = 1] out = np.empty(32, dtype = np.float32)
 	# load
 	n0 = _mm_loadu_ps(data)
 	n1 = _mm_loadu_ps(data + 4)
@@ -88,11 +88,11 @@ cdef dct_time_fwd(cnp.ndarray[cnp.float32_t, ndim = 1] a):
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef dct_fwd(cnp.ndarray[cnp.float32_t, ndim = 1] a):
+def dct_fwd(cnp.ndarray[cnp.float32_t, ndim = 1] a):
 	cdef:
 		__m128 n0, n1, n2, n3, n4, n5, n6, n7, v0, v1, v2, v3, v4, v5, v6, v7
 		float* data = &a[0]
-		np.ndarray[np.float32_t, ndim = 1] out = np.empty(32, dtype = np.float32)
+		cnp.ndarray[cnp.float32_t, ndim = 1] out = np.empty(32, dtype = np.float32)
 	# load
 	n0 = _mm_loadu_ps(data)
 	n1 = _mm_loadu_ps(data + 4)
@@ -117,23 +117,19 @@ cdef dct_fwd(cnp.ndarray[cnp.float32_t, ndim = 1] a):
 	_mm_storeu_ps(&out[28], v7)
 	return out
 
-
+@cython.nogil
+@cython.boundscheck(False)
+@cython.wraparound(False)
 cdef uint16_to_fp32(cnp.ndarray[cnp.uint16_t, ndim = 1] a):
 	cdef:
 		unsigned char* data_ptr = <unsigned char *> ...
-		__m128i n0 = _mm_cvtepu16_epi32(_mm_movpi64_epi64(_mm_loadu_si64(<void *> data_ptr)))
+		__m128i n0 = _mm_cvtepu16_epi32(_mm_loadu_si64(data_ptr))
 	return n0
 
+@cython.boundscheck(False)
+@cython.wraparound(False)
 def dct_3d_fwd(cnp.ndarray[cnp.uint16_t, ndim = 3] a): # 32x32x32 block
 	cdef:
 		unsigned char i, j, k
 		cnp.ndarray[cnp.uint16_t, ndim = 3] result = np.empty((32, 32, 32), np.float32)
-	for i in prange(32, nogil = True):
-		for j in prange(32, nogil = True):
-			for k in prange(8, nogil = True):
-				result[i, j, k << 2] = uint16_to_fp32(a[i, j, k << 2])
-	for i in prange(32, nogil = True):
-		for j in prange(32, nogil = True):
-			result[i, j] = dct_fwd(result[i, j])
-
 	
