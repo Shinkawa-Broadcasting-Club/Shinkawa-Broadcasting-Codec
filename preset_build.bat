@@ -1,1 +1,1 @@
-python "C:\Program Files\Python312\Lib\site-packages\sbcfast\xxx_setup.py" build_ext --inplace
+python "C:\Program Files\Python312\Lib\site-packages\sbcfast\preset_setup.py" build_ext --inplace
