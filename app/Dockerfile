@@ -1,6 +1,8 @@
 FROM debian:trixie-slim
 ENV DEBIAN_FRONTEND=noninteractive
-ENV FFMPEG_VERSION=5.1.4
+ENV FFMPEG_VERSION=5.1.6
+ENV LD_LIBRARY_PATH="/usr/local/lib:$LD_LIBRARY_PATH"
+
 
 # Install Debian Packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -72,9 +74,19 @@ WORKDIR /app
 RUN python3 -m venv /venv
 ENV PATH="/venv/bin:$PATH"
 
+# Install VapourSynth
+RUN cd /usr/local/src && \
+    git clone -b R70.11 --depth 1 https://github.com/vapoursynth/vapoursynth.git && \
+    cd vapoursynth && \
+    ./autogen.sh && \
+    LDFLAGS="-L/usr/local/lib" ./configure && \
+    make -j$(nproc) && \
+    make install && \
+    ldconfig
+
 ## Install ffmpeg
-RUN mkdir /tmp/ffmpeg_sources && \
-    cd /tmp/ffmpeg_sources && \
+RUN mkdir /usr/local/src/ffmpeg && \
+    cd /usr/local/src/ffmpeg && \
     curl -fsSL http://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.bz2 | tar -xj --strip-components=1 && \
     ./configure \
     --prefix=/usr/local \
@@ -101,26 +113,17 @@ RUN mkdir /tmp/ffmpeg_sources && \
     make -j$(nproc) && \
     make install
 
-# Install VapourSynth
-RUN git clone https://github.com/vapoursynth/vapoursynth.git /opt/vapoursynth && \
-    cd /opt/vapoursynth && \
-    ./autogen.sh && \
-    ./configure && \
-    make -j$(nproc) && \
-    make install && \
-    ldconfig
-
 # Install L-SMASH
-RUN cd /tmp && \
-    git clone https://github.com/l-smash/l-smash.git && \
+RUN cd /usr/local/src && \
+    git clone -b v2.14.5 --depth 1 https://github.com/l-smash/l-smash.git && \
     cd l-smash && \
     ./configure --enable-shared && \
     make -j$(nproc) && \
     make install
 
 # Install L-SMASH-Works
-RUN cd /tmp && \
-    git clone -b 20220505 https://github.com/plife18/L-SMASH-Works.git && \
+RUN cd /usr/local/src && \
+    git clone -b 20230716 --depth 1 https://github.com/plife18/L-SMASH-Works.git && \
     cd L-SMASH-Works/VapourSynth && \
     LDFLAGS="-Wl,-Bsymbolic" meson build && \
     cd build && \
