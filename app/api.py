@@ -1,9 +1,10 @@
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse
 from endecode import sbc_encoder as SbcEncoder, sbc_decoder as SbcDecoder
 import os
 import tempfile
 from typing import Optional
+import pathlib
 
 # Define FastAPI
 app = FastAPI()
@@ -17,17 +18,23 @@ async def encode(
 ):
     if not file.filename:
         raise HTTPException(status_code=400, detail='No selected file')
+    original_name = pathlib.Path(file.filename).stem
+    output_filename = f"{original_name}.sbc"
     
     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tempInput:
         inputPath = tempInput.name
         content = await file.read()
         with open(inputPath, 'wb') as f:
             f.write(content)
-    
-    outputPath = tempfile.mktemp(suffix=".sbc")
+    outputPath = os.path.join(tempfile.gettempdir(), output_filename)
+
     try:
         SbcEncoder(inputPath, q, outputPath, transfer)
-        return {"message": "Encoding completed", "outputPath": outputPath}
+        return FileResponse(
+            path=outputPath,
+            filename=output_filename,
+            media_type='application/octet-stream'
+        )
     except Exception as error:
         raise HTTPException(status_code=500, detail=str(error))
     finally:
@@ -36,21 +43,28 @@ async def encode(
 # Endpoint [POST] /decode
 @app.post('/decode')
 async def decode(
-    file: UploadFile = File(...),
-    play: int = Form(0)
+    file: UploadFile = File(...)
 ):
     if not file.filename:
         raise HTTPException(status_code=400, detail='No selected file')
     
+    original_name = pathlib.Path(file.filename).stem
+    output_filename = f"{original_name}_decoded.mp4"
+
     with tempfile.NamedTemporaryFile(delete=False, suffix=".sbc") as tempInput:
         inputPath = tempInput.name
         content = await file.read()
         with open(inputPath, 'wb') as f:
             f.write(content)
-    
+    outputPath = os.path.join(tempfile.gettempdir(), output_filename)
+
     try:
-        SbcDecoder(inputPath, play)
-        return {"message": "Decoding completed"}
+        SbcDecoder(inputPath)
+        return FileResponse(
+            path=outputPath,
+            filename=output_filename,
+            media_type='video/mp4'
+        )
     except Exception as error:
         raise HTTPException(status_code=500, detail=str(error))
     finally:

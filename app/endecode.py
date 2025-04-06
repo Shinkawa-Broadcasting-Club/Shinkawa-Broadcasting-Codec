@@ -121,26 +121,32 @@ def sbc_decode(splited, s, q):
 	coef = dct_3d_bwd(coef.astype(np.float32) * 1048560 / 2047)
 	return np.clip(coef // 8, a_min = 0, a_max = 65535).astype(np.uint16)[:, :s[1], :s[2]]
 
-def sbc_decoder(path, play):
+def sbc_decoder(path):
 	with open(path, "rb") as f:
 		index = get_binary_header(f.read(12))
 		s = np.array([4, index[1], index[0]])
 		q = np.frombuffer(f.read(1), np.int8)[0]
-		splited = list(filter(lambda x: x != b'', f.read().split(b'EOB')))
+		splited = list(filter(lambda x: x != b'', f.read().split(b'EOB')))	
+		output_path = path.rsplit('.', 1)[0] + '_decoded.mp4'
+		frames = []
 		for c in range(np.ceil(index[2] / 8).astype(np.uint32)):
 			r = sbc_decode(splited[c], s, q)
-			
-	return 
+			frames.append(r)
+		frames = np.concatenate(frames, axis=0)
+		clip = core.std.BlankClip(
+			format=vs.YUV444P16,
+			length=len(frames),
+			width=s[1],
+			height=s[2],
+			fpsnum=index[3],
+			fpsden=index[4]
+		)
 
-#sbc_encoder(path, q, output, transfer)
-#sbc_decoder(output, 0)
-
-def play(coef, clip):
-	# normalize coefficient and convert to 16-bit integer
-	prev = YCbCr_to_RGB(np.clip(coef // 8, a_min = 0, a_max = 65535).astype(np.uint16)[:, :clip.height, :clip.width], in_bits = 16).astype(np.uint16)
-	del coef
-	fps = int(1000 / clip.fps.numerator * clip.fps.denominator)
-	for e in range(len(prev)):
-		cv2.imshow('image window', prev[e])
-		cv2.waitKey(fps)
-	cv2.destroyAllWindows()
+		def frame_generator(n, frame):
+			for plane in range(3):
+				frame[plane].replace(frames[n, :, :, plane].tobytes())
+			return frame
+		
+		clip = clip.std.ModifyFrame(clips=clip, selector=frame_generator)
+		clip.output(output_path)
+		return output_path
