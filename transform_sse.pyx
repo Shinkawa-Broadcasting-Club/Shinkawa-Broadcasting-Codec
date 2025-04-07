@@ -6,44 +6,47 @@ cdef extern from "nmmintrin.h" nogil:
 	ctypedef struct __m128i: pass
 	__m128i _mm_loadl_epi64 (const __m128i* mem_addr)
 	__m128i _mm_cvtepu16_epi32 (__m128i a)
+	__m128i _mm_set_epi32 (int e3, int e2, int e1, int e0)
+	__m128 _mm_load1_ps (const float* mem_addr)
+	__m128 _mm_castsi128_ps (__m128i a)
 	__m128 _mm_loadu_ps (const float* mem_addr)
 	__m128 _mm_cvtepi32_ps (__m128i a)
+	__m128 _mm_add_ps (__m128 a, __m128 b)
+	__m128 _mm_sub_ps (__m128 a, __m128 b)
+	__m128 _mm_mul_ps (__m128 a, __m128 b)
 	void _mm_storeu_ps (float* mem_addr, __m128 a)
 
-# 符号無16bit整数->符号付32bit浮動小数点数
-cdef inline float* ui16_fp32(unsigned short* arr_in, float* arr_out) nogil:
-	cdef unsigned char n
-	for n in prange(8): _mm_storeu_ps(arr_out + (n << 2), _mm_cvtepi32_ps(_mm_cvtepu16_epi32(_mm_loadl_epi64(<const __m128i*>(arr_in + (n << 2))))))
-	return arr_out
+# 定数代入(32bit浮動小数点数、最高精度)
+cdef inline __m128 _mm_setconst_ps(int c) nogil: return _mm_load1_ps(<const float*> c)
 
 # DCT(離散余弦変換)
-cdef inline float* dct_fwd(float* arr_in, float* arr_out) nogil:
-	cdef __m128 n0, n1, n2, n3, n4, n5, n6, n7, v0, v1, v2, v3, v4, v5, v6, v7
-	return arr_out
-
-cdef inline void dct_3d_fwd(unsigned short[32][32][32] arr, float[32][32][32] out) nogil:
+cdef inline void dct_fwd(__m128[8] arr_in, __m128[8] arr_out) nogil:
 	cdef:
-		float[32][32][32] tmp0, tmp1
+		__m128[8] tmp0, tmp1
+		__m128[4] a
+		__m128 tmp
+		unsigned char n
+	
+	# stage 1
+	for n in prange(8):
+		if n < 4: tmp0[n] = _mm_add_ps(arr_in[n], arr_in[7 - n])
+		else:     tmp0[n] = _mm_sub_ps(arr_in[n], arr_in[7 - n])
+	# stage 2
+	for n in prange(8):
+		if n < 2:     tmp1[n] = _mm_add_ps(tmp0[n], tmp0[3 - n])
+		if 1 < n < 4: tmp1[n] = _mm_sub_ps(tmp0[n], tmp0[3 - n])
+		if 3 < n < 7: tmp1[n] = _mm_add_ps(tmp0[n], tmp0[n + 1])
+	# stage 3
+	for n in prange(9):
+		if n == 0: tmp0[0] = _mm_add_ps(tmp1[0], tmp1[1])
+		if n == 1: tmp0[1] = _mm_sub_ps(tmp1[0], tmp1[1])
+		if n == 2: tmp0[2] = _mm_mul_ps(_mm_add_ps(tmp1[2], tmp1[3]), _mm_setconst_ps(1060439283))
+		if n == 4: tmp0[4] = _mm_mul_ps(tmp1[4], _mm_setconst_ps(1057655764))
+		if n == 5: tmp0[5] = _mm_mul_ps(tmp0[5], _mm_setconst_ps(1060439283))
+		if n == 6: tmp0[5] = _mm_mul_ps(tmp0[6], _mm_setconst_ps(1067924853))
+		if n == 8: tmp = _mm_mul_ps(_mm_sub_ps(tmp1[6], tmp1[4]), _mm_setconst_ps(1053028117))
+
+cdef inline void dct_3d_fwd(unsigned short[8][8][8] arr, float[8][8][8] out) nogil:
+	cdef:
+		__m128[8][8][2] tmp
 		unsigned char l, m, n
-	# 符号無16bit整数->符号付32bit浮動小数点数
-	for l in prange(32):
-		for m in prange(32):
-			ui16_fp32(&arr[l][m][0], &tmp0[l][m][0])
-	# 横方向にDCT
-	for l in prange(32):
-		for m in prange(32):
-			dct_fwd(&tmp0[l][m][0], &tmp1[l][m][0])
-	# (時、縦、横)->(横、時、縦)
-	for l in prange(32):
-		for m in prange(32):
-			for n in prange(32):
-				tmp0[l][m][n] = tmp1[n][l][m]
-	# 縦方向にDCT
-	for l in prange(32):
-		for m in prange(32):
-			dct_fwd(&tmp0[l][m][0], &tmp1[l][m][0])
-	# (横、時、縦)->(縦、横、時)
-	for l in prange(32):
-		for m in prange(32):
-			for n in prange(32):
-				tmp0[l][m][n] = tmp1[n][l][m]
