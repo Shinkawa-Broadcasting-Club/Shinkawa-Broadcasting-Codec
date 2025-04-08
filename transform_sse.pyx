@@ -19,7 +19,18 @@ cdef extern from "nmmintrin.h" nogil:
 # 定数代入(32bit浮動小数点数、最高精度)
 cdef inline __m128 _mm_setconst_ps(int c) nogil: return _mm_load1_ps(<const float*> c)
 
-# DCT(離散余弦変換)
+# 時間軸DCT(離散余弦変換)
+cdef inline void dct_time_fwd(__m128[8] arr_in, __m128[8] arr_out) nogil:
+	cdef:
+		__m128[8] tmp0, tmp1
+		unsigned char n, m
+	for m in range(3):
+		for n in prange(8):
+			if m == 0:    tmp0[n] = _mm_add_ps(arr_in[n], arr_in[n + 4]) if n & 7 < 4 else _mm_sub_ps(arr_in[n - 4], arr_in[n]) # stage 1
+			if m == 1:    tmp1[n] = _mm_add_ps(  tmp0[n],   tmp0[n + 2]) if n & 3 < 2 else _mm_sub_ps(  tmp0[n - 2],   tmp0[n]) # stage 2
+			if m == 2: arr_out[n] = _mm_add_ps(  tmp1[n],   tmp1[n + 1]) if n & 1 < 1 else _mm_sub_ps(  tmp1[n - 1],   tmp1[n]) # stage 3
+
+# 空間DCT
 cdef inline void dct_fwd(__m128[8] arr_in, __m128[8] arr_out) nogil:
 	cdef:
 		__m128[8] tmp0, tmp1
