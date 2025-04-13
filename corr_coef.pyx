@@ -56,7 +56,7 @@ cdef inline corr_coef(float[:, :] arr):
     cdef:
         float[2][256] sample = rand256(arr)
         float[256] x, y, xx, yy, xy
-        float cov, corr
+        float corr
         unsigned short i, j, k, l
     with nogil:
         for i in prange(5):
@@ -135,6 +135,7 @@ cdef inline corr_coef(float[:, :] arr):
             if i == 2: xx[0] += xx[128]
             if i == 3: yy[0] += yy[128]
             if i == 4: xy[0] += xy[128]
+    return (xy[0] - x[0] * y[0]) * rsqrt((xx[0] - x[0] ** 2) * (yy[0] - y[0] ** 2))
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
