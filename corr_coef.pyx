@@ -3,6 +3,7 @@ import numpy as np
 cimport numpy as cnp
 from libc.stdlib cimport rand, srand, malloc, free
 from libc.time cimport time
+from libc.math cimport fsum
 from cython.parallel import prange
 cdef extern from "nmmintrin.h":
     ctypedef struct __m128: pass
@@ -66,76 +67,13 @@ cdef inline corr_coef(float[:, :] arr):
                 if i == 2: xx[j] = sample[0][j] ** 2
                 if i == 3: yy[j] = sample[1][j] ** 2
                 if i == 4: xy[j] = sample[0][j] * sample[1][j]
-        for i in prange(5):
-            for j in prange(128):
-                k = j << 1
-                l = k + 1
-                if i == 0: x[k] += x[l]
-                if i == 1: y[k] += y[l]
-                if i == 2: xx[k] += xx[l]
-                if i == 3: yy[k] += yy[l]
-                if i == 4: xy[k] += xy[l]
-        for i in prange(5):
-            for j in prange(64):
-                k = j << 2
-                l = k + 2
-                if i == 0: x[k] += x[l]
-                if i == 1: y[k] += y[l]
-                if i == 2: xx[k] += xx[l]
-                if i == 3: yy[k] += yy[l]
-                if i == 4: xy[k] += xy[l]
-        for i in prange(5):
-            for j in prange(32):
-                k = j << 3
-                l = k + 4
-                if i == 0: x[k] += x[l]
-                if i == 1: y[k] += y[l]
-                if i == 2: xx[k] += xx[l]
-                if i == 3: yy[k] += yy[l]
-                if i == 4: xy[k] += xy[l]
-        for i in prange(5):
-            for j in prange(16):
-                k = j << 4
-                l = k + 8
-                if i == 0: x[k] += x[l]
-                if i == 1: y[k] += y[l]
-                if i == 2: xx[k] += xx[l]
-                if i == 3: yy[k] += yy[l]
-                if i == 4: xy[k] += xy[l]
-        for i in prange(5):
-            for j in prange(8):
-                k = j << 5
-                l = k + 16
-                if i == 0: x[k] += x[l]
-                if i == 1: y[k] += y[l]
-                if i == 2: xx[k] += xx[l]
-                if i == 3: yy[k] += yy[l]
-                if i == 4: xy[k] += xy[l]
-        for i in prange(5):
-            for j in prange(4):
-                k = j << 6
-                l = k + 32
-                if i == 0: x[k] += x[l]
-                if i == 1: y[k] += y[l]
-                if i == 2: xx[k] += xx[l]
-                if i == 3: yy[k] += yy[l]
-                if i == 4: xy[k] += xy[l]
-        for i in prange(5):
-            for j in prange(2):
-                k = j << 7
-                l = k + 64
-                if i == 0: x[k] += x[l]
-                if i == 1: y[k] += y[l]
-                if i == 2: xx[k] += xx[l]
-                if i == 3: yy[k] += yy[l]
-                if i == 4: xy[k] += xy[l]
-        for i in prange(5):
-            if i == 0: x[0] += x[128]
-            if i == 1: y[0] += y[128]
-            if i == 2: xx[0] += xx[128]
-            if i == 3: yy[0] += yy[128]
-            if i == 4: xy[0] += xy[128]
-    return (xy[0] - x[0] * y[0]) * rsqrt((xx[0] - x[0] ** 2) * (yy[0] - y[0] ** 2))
+    x[0] = fsum(x, 256)
+    y[0] = fsum(y, 256)
+    xx[0] = fsum(xx, 256)
+    yy[0] = fsum(yy, 256)
+    xy[0] = fsum(xy, 256)
+    corr = (xy[0] - x[0] * y[0]) * rsqrt((xx[0] - x[0] ** 2) * (yy[0] - y[0] ** 2))
+    return corr
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
