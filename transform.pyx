@@ -2,17 +2,7 @@
 cimport cython
 import numpy as np
 cimport numpy as cnp
-from libc.stdlib cimport rand, srand, malloc, free
-from libc.time cimport time
 from cython.parallel import parallel, prange
-cdef extern from "nmmintrin.h" nogil:
-	ctypedef struct __m128: pass
-	__m128 _mm_loadu_ps (const float* mem_addr)
-	__m128 _mm_set_ps1 (float a)
-	__m128 _mm_add_ps (__m128 a, __m128 b)
-	__m128 _mm_sub_ps (__m128 a, __m128 b)
-	__m128 _mm_mul_ps (__m128 a, __m128 b)
-	void _mm_storeu_ps (float* mem_addr, __m128 a)
 
 cdef inline void dct_fwd(float[8] vector, float[8] out) nogil:
 	cdef:
@@ -56,12 +46,57 @@ cdef inline void dct_fwd(float[8] vector, float[8] out) nogil:
 	out[7] = v23 - v20
 
 cdef inline void dct_time_fwd(float[8] inp, float[8] out) nogil:
-	cdef:
-		int i
+	cdef int i
 	with nogil, parallel():
 		for i in prange(8): out[i] = inp[i] + inp[i + 4] if i < 4 else inp[i - 4] - inp[i]
 		for i in prange(8): out[i] = out[i] + out[i + 2] if i & 3 < 2 else out[i - 2] - out[i]
 		for i in prange(8): out[i] = out[i] + out[i + 1] if i & 1 == 0 else out[i - 1] - out[i]
 
-cpdef inline dct_3d_fwd(cnp.ndarray[cnp.float32_t, ndim=3] arr):
-	return
+cdef inline void dct3dfwd(float[8][8][8] arr, float[8][8][8] out) nogil:
+	cdef:
+		int i, j, k
+		float[8][8][8] tmp
+	with nogil, parallel():
+		for i in prange(8):
+			for j in prange(8):
+				dct_fwd(arr[i][j], tmp[i][j])
+		for i in prange(8):
+			for j in prange(8):
+				for k in prange(8):
+					tmp[i][j][k] = tmp[k][i][j]
+		for i in prange(8):
+			for j in prange(8):
+				dct_fwd(tmp[i][j], tmp[i][j])
+		for i in prange(8):
+			for j in prange(8):
+				for k in prange(8):
+					tmp[i][j][k] = tmp[k][i][j]
+		for i in prange(8):
+			for j in prange(8):
+				dct_time_fwd(tmp[i][j], tmp[i][j])
+		for i in prange(8):
+			for j in prange(8):
+				for k in prange(8):
+					out[i][j][k] = tmp[k][i][j]
+
+cpdef inline void dct_3d_fwd(float[:, :, :] arr, float[:, :, :] out):
+	cdef:
+		int i, j, k, l, m, n
+		int x = <int> arr.shape[0]
+		int y = <int> arr.shape[1]
+		int z = <int> arr.shape[2]
+		float[8][8][8] dct
+	with nogil, parallel():
+		for i in prange(x >> 3):
+			for j in prange(y >> 3):
+				for k in prange(z >> 3):
+					for l in prange(8):
+						for m in prange(8):
+							for n in prange(8):
+								dct[l][m][n] = arr[i << 3 + l, j << 3 + m, k << 3 + n]
+					dct3dfwd(dct, dct)
+					for l in prange(8):
+						for m in prange(8):
+							for n in prange(8):
+								out[i << 3 + l, j << 3 + m, k << 3 + n] = dct[l][m][n]
+
