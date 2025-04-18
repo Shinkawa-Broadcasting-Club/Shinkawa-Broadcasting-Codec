@@ -1,108 +1,61 @@
-# cython: language_level=3, boundscheck=False, wraparound=False, initializedcheck=False
-from libc.string cimport memcpy
-from cpython.bytearray cimport PyByteArray_AsString
-from cpython.mem cimport PyMem_Malloc, PyMem_Free
+# cython: boundscheck=False, wraparound=False, cdivision=True, nonecheck=False
 from cython.parallel import prange
-import cython
-cdef struct VSFormat:
-	int sample_type
-	int bits_per_sample
-	int num_planes
+from libc.string cimport memcpy
+from libc.stdlib cimport malloc, free
+from libc.stddef cimport size_t
+import array
+from cpython.long cimport PyLong_AsVoidPtr
 
-cdef struct VSFrame:
-	VSFormat* format
-	void* data[4]
-	int stride[4]
-	int width[4]
-	int height[4]
-
-cdef inline char get_format_code(VSFormat* fmt):
-	if fmt.sample_type == 0:
-		if fmt.bits_per_sample == 8: return b'B'[0]
-		elif fmt.bits_per_sample == 16: return b'H'[0]
-		elif fmt.bits_per_sample == 32: return b'I'[0]
-		else: raise ValueError("Unsupported integer bit depth")
-	elif fmt.sample_type == 1:
-		if fmt.bits_per_sample == 32: return b'f'[0]
-		elif fmt.bits_per_sample == 64: return b'd'[0]
-		else: raise ValueError("Unsupported float bit depth")
-	else: raise ValueError("Unknown sample type")
-
-cpdef inline tuple extract_frames_planes(tuple frames):
+cdef inline vs_to_np(frames):
+	cdef int nframes = frames.num_frames
+	if nframes == 0: return ()
 	cdef:
-		int nframes = len(frames)
-		int i, plane, plane_index = 0, num_planes, pixel_bytes, w, h, rb, total_bytes
-		VSFrame* cframe
-		int total_planes = 0
-	for i in range(nframes):
-		cframe = <VSFrame*>frames[i]
-		total_planes += cframe.format.num_planes
+		object first_frame = frames[0]
+		int num_planes = first_frame.format.num_planes
+		int bits_per_sample = first_frame.format.bits_per_sample
+		size_t element_size
+	if bits_per_sample == 8: element_size = 1
+	elif bits_per_sample == 16: element_size = 2
+	elif bits_per_sample == 32: element_size = 4
+	else: raise ValueError("Unsupported bit depth: %d" % bits_per_sample)
 	cdef:
-		unsigned char** src_ptrs = <unsigned char**> PyMem_Malloc(total_planes * sizeof(unsigned char*))
-		unsigned char** dst_ptrs = <unsigned char**> PyMem_Malloc(total_planes * sizeof(unsigned char*))
-		int* strides_arr = <int*> PyMem_Malloc(total_planes * sizeof(int))
-		Py_ssize_t* row_bytes_arr = <Py_ssize_t*> PyMem_Malloc(total_planes * sizeof(Py_ssize_t))
-		int* heights_arr = <int*> PyMem_Malloc(total_planes * sizeof(int))
-		int* widths_arr = <int*> PyMem_Malloc(total_planes * sizeof(int))
-		int* planes_count = <int*> PyMem_Malloc(nframes * sizeof(int))
-	if (src_ptrs is NULL or dst_ptrs is NULL or strides_arr is NULL or row_bytes_arr is NULL or heights_arr is NULL or widths_arr is NULL or planes_count is NULL): raise MemoryError("Failed to allocate memory for plane parameters")
-	cdef:
-		list buffer_list = []
-		list fmt_codes = []
-	for i in range(nframes):
-		cframe = <VSFrame*>frames[i]
-		num_planes = cframe.format.num_planes
-		planes_count[i] = num_planes
-		pixel_bytes = cframe.format.bits_per_sample // 8
-		fmt_codes.append(get_format_code(cframe.format))
-		buffer_list.append([])
-		for plane in range(num_planes):
-			w = cframe.width[plane]
-			h = cframe.height[plane]
-			rb = w * pixel_bytes
-			total_bytes = h * rb
-			buffer_list[i].append(bytearray(total_bytes))
-			dst_ptrs[plane_index] = <unsigned char*> PyByteArray_AsString(buffer_list[i][plane])
-			src_ptrs[plane_index] = <unsigned char*> cframe.data[plane]
-			strides_arr[plane_index] = cframe.stride[plane]
-			row_bytes_arr[plane_index] = rb
-			heights_arr[plane_index] = h
-			widths_arr[plane_index] = w
-			plane_index += 1
-	cdef int p, y, ph, rb_val
-	with nogil:
-		for p in prange(total_planes, schedule='static'):
-			ph = heights_arr[p]
-			rb_val = row_bytes_arr[p]
-			for y in range(ph): memcpy(dst_ptrs[p] + y * rb_val, src_ptrs[p] + y * strides_arr[p], rb_val)
-	cdef list result = []
-	plane_index = 0
-	cdef:
-		list plane_views
-		object mv, mv_cast
-	for i in range(nframes):
-		num_planes = planes_count[i]
-		plane_views = []
-		for j in range(num_planes):
-			mv = memoryview(buffer_list[i][j])
-			try: mv_cast = mv.cast(fmt_codes[i], shape=[heights_arr[plane_index], widths_arr[plane_index], 1])
-			except Exception as e:
-				PyMem_Free(src_ptrs)
-				PyMem_Free(dst_ptrs)
-				PyMem_Free(strides_arr)
-				PyMem_Free(row_bytes_arr)
-				PyMem_Free(heights_arr)
-				PyMem_Free(widths_arr)
-				PyMem_Free(planes_count)
-				raise ValueError("Error casting memoryview for frame %d, plane %d: %s" % (i, j, e))
-			plane_views.append(mv_cast)
-			plane_index += 1
-		result.append(tuple(plane_views))
-	PyMem_Free(src_ptrs)
-	PyMem_Free(dst_ptrs)
-	PyMem_Free(strides_arr)
-	PyMem_Free(row_bytes_arr)
-	PyMem_Free(heights_arr)
-	PyMem_Free(widths_arr)
-	PyMem_Free(planes_count)
-	return tuple(result)
+		list result_planes = [None] * num_planes
+		int plane, height, width, i, j
+		Py_ssize_t total_elements, total_bytes
+		void **src_ptrs = NULL
+		int *src_pitches = NULL
+		char *dst
+		size_t dst_offset
+		object buf_obj, mv, ptr_obj
+	for plane in range(num_planes):
+		height = first_frame.get_height(plane)
+		width  = first_frame.get_width(plane)
+		total_elements = nframes * height * width
+		total_bytes = total_elements * element_size
+		if bits_per_sample == 8: buf_obj = bytearray(total_bytes)
+		elif bits_per_sample == 16: buf_obj = array.array('H', [0]) * total_elements
+		elif bits_per_sample == 32: buf_obj = array.array('f', [0.0]) * total_elements
+		mv = memoryview(buf_obj)
+		if bits_per_sample == 8: mv = mv.cast('B')
+		elif bits_per_sample == 16: mv = mv.cast('H')
+		elif bits_per_sample == 32: mv = mv.cast('f')
+		try: mv = mv.reshape((nframes, height, width))
+		except Exception as e: raise ValueError("Reshape failed: " + str(e))
+		result_planes[plane] = mv
+		src_ptrs = <void **> malloc(nframes * sizeof(void *))
+		src_pitches = <int*> malloc(nframes * sizeof(int))
+		if src_ptrs == NULL or src_pitches == NULL:
+			if src_ptrs: free(src_ptrs)
+			if src_pitches: free(src_pitches)
+			raise MemoryError("Failed to allocate source pointer arrays")
+		for i in range(nframes):
+			ptr_obj = frames[i].get_read_ptr(plane)
+			src_ptrs[i] = PyLong_AsVoidPtr(ptr_obj)
+			src_pitches[i] = frames[i].get_stride(plane)
+		dst = <char*> mv.data
+		for i in prange(nframes, schedule='static', nogil=True):
+			dst_offset = i * height * width * element_size
+			for j in range(height): memcpy(dst + dst_offset + j * width * element_size, <char*>src_ptrs[i] + j * src_pitches[i], width * element_size)
+		free(src_ptrs)
+		free(src_pitches)
+	return tuple(result_planes)
