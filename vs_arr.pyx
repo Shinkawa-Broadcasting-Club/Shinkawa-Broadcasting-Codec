@@ -6,7 +6,7 @@ from libc.stddef cimport size_t
 import array
 from cpython.long cimport PyLong_AsVoidPtr
 
-cdef inline vs_to_np(frames):
+cdef public tuple vs_to_np(frames):
 	cdef int nframes = frames.num_frames
 	if nframes == 0: return ()
 	cdef:

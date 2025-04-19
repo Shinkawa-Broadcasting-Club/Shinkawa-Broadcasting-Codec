@@ -1,7 +1,4 @@
 # cython: boundscheck=False, wraparound=False, nonecheck=False
-cimport cython
-import numpy as np
-cimport numpy as cnp
 from cython.parallel import parallel, prange
 
 cdef inline void dct_fwd(float[8] vector, float[8] out) nogil:
@@ -52,7 +49,7 @@ cdef inline void dct_time_fwd(float[8] inp, float[8] out) nogil:
 		for i in prange(8): out[i] = out[i] + out[i + 2] if i & 3 < 2 else out[i - 2] - out[i]
 		for i in prange(8): out[i] = out[i] + out[i + 1] if i & 1 == 0 else out[i - 1] - out[i]
 
-cdef inline void dct3dfwd(float[8][8][8] arr, float[8][8][8] out) nogil:
+cdef inline void dct3dfwd(float[8][8][8] arr, float[8][8][8] out, float[8][8] matrix) nogil:
 	cdef:
 		int i, j, k
 		float[8][8][8] tmp
@@ -63,30 +60,43 @@ cdef inline void dct3dfwd(float[8][8][8] arr, float[8][8][8] out) nogil:
 		for i in prange(8):
 			for j in prange(8):
 				for k in prange(8):
-					tmp[i][j][k] = tmp[k][i][j]
+					tmp[i][j][k] = tmp[k][i][j] # (0, 1, 2) -> (1, 2, 0)
 		for i in prange(8):
 			for j in prange(8):
 				dct_fwd(tmp[i][j], tmp[i][j])
 		for i in prange(8):
 			for j in prange(8):
 				for k in prange(8):
-					tmp[i][j][k] = tmp[k][i][j]
+					tmp[i][j][k] = tmp[j][k][i] # (1, 2, 0) -> (0, 1, 2)
+		for i in prange(8):
+			for j in prange(8):
+				for k in prange(8):
+					tmp[i][j][k] = 0 if tmp[i][j][k] < matrix[j][k]	else tmp[i][j][k]
+		for i in prange(8):
+			for j in prange(8):
+				for k in prange(8):
+					tmp[i][j][k] = tmp[j][k][i] # (0, 1, 2) -> (2, 0, 1)
 		for i in prange(8):
 			for j in prange(8):
 				dct_time_fwd(tmp[i][j], tmp[i][j])
 		for i in prange(8):
 			for j in prange(8):
 				for k in prange(8):
-					out[i][j][k] = tmp[k][i][j]
+					out[i][j][k] = tmp[k][i][j] # (2, 0, 1) -> (0, 1, 2)
 
-cpdef inline void dct_3d_fwd(float[:, :, :] arr, float[:, :, :] out):
+cdef inline void dct_3d_fwd(float[:, :, :] arr, float[:, :, :] out, float[:, :] matrix, float q):
 	cdef:
 		int i, j, k, l, m, n
 		int x = <int> arr.shape[0]
 		int y = <int> arr.shape[1]
 		int z = <int> arr.shape[2]
 		float[8][8][8] dct
+		float[8][8] mat
+	if not(0 <= q <= 100): raise ValueError("Quality must be a range [0 - 100]")
 	with nogil, parallel():
+		for l in prange(8):
+			for m in prange(8):
+				mat[l][m] = matrix[l, m] - matrix[l, m] * q * 0.01
 		for i in prange(x >> 3):
 			for j in prange(y >> 3):
 				for k in prange(z >> 3):
@@ -94,7 +104,7 @@ cpdef inline void dct_3d_fwd(float[:, :, :] arr, float[:, :, :] out):
 						for m in prange(8):
 							for n in prange(8):
 								dct[l][m][n] = arr[i << 3 + l, j << 3 + m, k << 3 + n]
-					dct3dfwd(dct, dct)
+					dct3dfwd(dct, dct, mat)
 					for l in prange(8):
 						for m in prange(8):
 							for n in prange(8):
