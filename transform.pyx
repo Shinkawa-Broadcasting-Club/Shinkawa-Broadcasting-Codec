@@ -1,112 +1,139 @@
 # cython: boundscheck=False, wraparound=False, nonecheck=False
 from cython.parallel import parallel, prange
 
-cdef inline void dct_fwd(float[8] vector, float[8] out) nogil:
+cdef inline void dct_3d_fwd(float[:, :, :] arr, float[:, :, :] out, int[8][8] matrix, float q):
 	cdef:
-		float c4 = 0.70710677
-		float c6 = 0.38268343
-		float a2 = 0.5411961
-		float a4 = 1.306563
-		# stage 1
-		float v0 = vector[0] + vector[7]
-		float v1 = vector[1] + vector[6]
-		float v2 = vector[2] + vector[5]
-		float v3 = vector[3] + vector[4]
-		float v4 = vector[3] - vector[4]
-		float v5 = vector[2] - vector[5]
-		float v6 = vector[1] - vector[6]
-		float v7 = vector[0] - vector[7]
-		# stage 2
-		float v8 = v0 + v3
-		float v9 = v1 + v2
-		float v10 = v1 - v2
-		float v11 = v0 - v3
-		float v12 = v4 + v5
-		float v13 = (v5 + v6) * c4
-		float v14 = v6 + v7
-		# stage 3
-		float v17 = (v10 + v11) * c4
-		float v18 = (v14 - v12) * c6
-		# stage 4
-		float v19 = v12 * a2 - v18
-		float v20 = v14 * a4 - v18
-		# stage 5
-		float v23 = v13 + v7
-		float v24 = v7 - v13
-	out[0] = v8 + v9
-	out[1] = v23 + v20
-	out[2] = v17 + v11
-	out[3] = v24 - v19
-	out[4] = v8 - v9
-	out[5] = v19 + v24
-	out[6] = v11 - v17
-	out[7] = v23 - v20
-
-cdef inline void dct_time_fwd(float[8] inp, float[8] out) nogil:
-	cdef int i
-	with nogil, parallel():
-		for i in prange(8): out[i] = inp[i] + inp[i + 4] if i < 4 else inp[i - 4] - inp[i]
-		for i in prange(8): out[i] = out[i] + out[i + 2] if i & 3 < 2 else out[i - 2] - out[i]
-		for i in prange(8): out[i] = out[i] + out[i + 1] if i & 1 == 0 else out[i - 1] - out[i]
-
-cdef inline void dct3dfwd(float[8][8][8] arr, float[8][8][8] out, float[8][8] matrix) nogil:
-	cdef:
-		int i, j, k
-		float[8][8][8] tmp
-	with nogil, parallel():
-		for i in prange(8):
-			for j in prange(8):
-				dct_fwd(arr[i][j], tmp[i][j])
-		for i in prange(8):
-			for j in prange(8):
-				for k in prange(8):
-					tmp[i][j][k] = tmp[k][i][j] # (0, 1, 2) -> (1, 2, 0)
-		for i in prange(8):
-			for j in prange(8):
-				dct_fwd(tmp[i][j], tmp[i][j])
-		for i in prange(8):
-			for j in prange(8):
-				for k in prange(8):
-					tmp[i][j][k] = tmp[j][k][i] # (1, 2, 0) -> (0, 1, 2)
-		for i in prange(8):
-			for j in prange(8):
-				for k in prange(8):
-					tmp[i][j][k] = 0 if tmp[i][j][k] < matrix[j][k]	else tmp[i][j][k]
-		for i in prange(8):
-			for j in prange(8):
-				for k in prange(8):
-					tmp[i][j][k] = tmp[j][k][i] # (0, 1, 2) -> (2, 0, 1)
-		for i in prange(8):
-			for j in prange(8):
-				dct_time_fwd(tmp[i][j], tmp[i][j])
-		for i in prange(8):
-			for j in prange(8):
-				for k in prange(8):
-					out[i][j][k] = tmp[k][i][j] # (2, 0, 1) -> (0, 1, 2)
-
-cdef inline void dct_3d_fwd(float[:, :, :] arr, float[:, :, :] out, float[:, :] matrix, float q):
-	cdef:
-		int i, j, k, l, m, n
+		int i, j, k, l, m, n, a, b, c
 		int x = <int> arr.shape[0]
 		int y = <int> arr.shape[1]
 		int z = <int> arr.shape[2]
-		float[8][8][8] dct
-		float[8][8] mat
+		float[8][8] thr
+		float[8][8] mul = [[1.        , 0.25489779, 0.27059805, 0.30067244, 0.35355339, 0.44998811, 0.65328148, 1.28145772],
+						   [0.25489779, 0.06497288, 0.06897484, 0.07664074, 0.09011998, 0.11470097, 0.16652001, 0.32664074],
+						   [0.27059805, 0.06897484, 0.0732233 , 0.08136138, 0.09567086, 0.12176591, 0.1767767 , 0.34675996],
+						   [0.30067244, 0.07664074, 0.08136138, 0.09040392, 0.10630376, 0.13529903, 0.19642374, 0.38529903],
+						   [0.35355339, 0.09011998, 0.09567086, 0.10630376, 0.125     , 0.15909482, 0.23096988, 0.45306372],
+						   [0.44998811, 0.11470097, 0.12176591, 0.13529903, 0.15909482, 0.2024893 , 0.2939689 , 0.57664074],
+						   [0.65328148, 0.16652001, 0.1767767 , 0.19642374, 0.23096988, 0.2939689 , 0.4267767 , 0.8371526 ],
+						   [1.28145772, 0.32664074, 0.34675996, 0.38529903, 0.45306372, 0.57664074, 0.8371526 , 1.6421339 ]]
+		float v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v17, v18, v19, v20, v23, v24
+		float thq = (1 - q * 0.01) / 2048
 	if not(0 <= q <= 100): raise ValueError("Quality must be a range [0 - 100]")
 	with nogil, parallel():
-		for l in prange(8):
+		for l in prange(8): # threshold
 			for m in prange(8):
-				mat[l][m] = matrix[l, m] - matrix[l, m] * q * 0.01
+				thr[l][m] = thq / mul[l][m] * matrix[l][m]
 		for i in prange(x >> 3):
 			for j in prange(y >> 3):
 				for k in prange(z >> 3):
-					for l in prange(8):
+					for l in prange(8): # DCT(Width-axis)
+						for m in prange(8):
+							a = i << 3 + l; b = j << 3 + m; c = k << 3
+							# stage 1
+							v0 = arr[a, b, c + 0] + arr[a, b, c + 7]
+							v1 = arr[a, b, c + 1] + arr[a, b, c + 6]
+							v2 = arr[a, b, c + 2] + arr[a, b, c + 5]
+							v3 = arr[a, b, c + 3] + arr[a, b, c + 4]
+							v4 = arr[a, b, c + 3] - arr[a, b, c + 4]
+							v5 = arr[a, b, c + 2] - arr[a, b, c + 5]
+							v6 = arr[a, b, c + 1] - arr[a, b, c + 6]
+							v7 = arr[a, b, c + 0] - arr[a, b, c + 7]
+							# stage 2
+							v8 = v0 + v3
+							v9 = v1 + v2
+							v10 = v1 - v2
+							v11 = v0 - v3
+							v12 = v4 + v5
+							v13 = (v5 + v6) * 0.70710677
+							v14 = v6 + v7
+							# stage 3
+							v17 = (v10 + v11) * 0.70710677
+							v18 = (v14 - v12) * 0.38268343
+							# stage 4
+							v19 = v12 * 0.5411961 - v18
+							v20 = v14 * 1.306563 - v18
+							# stage 5
+							v23 = v13 + v7
+							v24 = v7 - v13
+							# stage 6
+							out[a, b, c + 0] = v8 + v9
+							out[a, b, c + 1] = v23 + v20
+							out[a, b, c + 2] = v17 + v11
+							out[a, b, c + 3] = v24 - v19
+							out[a, b, c + 4] = v8 - v9
+							out[a, b, c + 5] = v19 + v24
+							out[a, b, c + 6] = v11 - v17
+							out[a, b, c + 7] = v23 - v20
+					for l in prange(8): # DCT(height-axis)
+						for m in prange(8):
+							a = i << 3 + l; b = j << 3; c = k << 3 + m
+							# stage 1
+							v0 = out[a, b + 0, c] + out[a, b + 7, c]
+							v1 = out[a, b + 1, c] + out[a, b + 6, c]
+							v2 = out[a, b + 2, c] + out[a, b + 5, c]
+							v3 = out[a, b + 3, c] + out[a, b + 4, c]
+							v4 = out[a, b + 3, c] - out[a, b + 4, c]
+							v5 = out[a, b + 2, c] - out[a, b + 5, c]
+							v6 = out[a, b + 1, c] - out[a, b + 6, c]
+							v7 = out[a, b + 0, c] - out[a, b + 7, c]
+							# stage 2
+							v8 = v0 + v3
+							v9 = v1 + v2
+							v10 = v1 - v2
+							v11 = v0 - v3
+							v12 = v4 + v5
+							v13 = (v5 + v6) * 0.70710677
+							v14 = v6 + v7
+							# stage 3
+							v17 = (v10 + v11) * 0.70710677
+							v18 = (v14 - v12) * 0.38268343
+							# stage 4
+							v19 = v12 * 0.5411961 - v18
+							v20 = v14 * 1.306563 - v18
+							# stage 5
+							v23 = v13 + v7
+							v24 = v7 - v13
+							# stage 6
+							out[a, b + 0, c] = v8 + v9
+							out[a, b + 1, c] = v23 + v20
+							out[a, b + 2, c] = v17 + v11
+							out[a, b + 3, c] = v24 - v19
+							out[a, b + 4, c] = v8 - v9
+							out[a, b + 5, c] = v19 + v24
+							out[a, b + 6, c] = v11 - v17
+							out[a, b + 7, c] = v23 - v20
+					for l in prange(8): # Coefficient Filtering
 						for m in prange(8):
 							for n in prange(8):
-								dct[l][m][n] = arr[i << 3 + l, j << 3 + m, k << 3 + n]
-					dct3dfwd(dct, dct, mat)
-					for l in prange(8):
+								a = i << 3 + l; b = j << 3 + m; c = k << 3 + n
+								out[a, b, c] = 0 if out[a, b, c] < thr[m][n] * out[a, j << 3, k << 3] else out[a, b, c] * mul[m][n]
+					for l in prange(8): # DCT(Time-axis)
 						for m in prange(8):
-							for n in prange(8):
-								out[i << 3 + l, j << 3 + m, k << 3 + n] = dct[l][m][n]
-
+							a = i << 3; b = j << 3 + l; c = k << 3 + m
+							# stage 1
+							v0 = out[a + 0, b, c] + out[a + 4, b, c]
+							v1 = out[a + 1, b, c] + out[a + 5, b, c]
+							v2 = out[a + 2, b, c] + out[a + 6, b, c]
+							v3 = out[a + 3, b, c] + out[a + 7, b, c]
+							v4 = out[a + 0, b, c] - out[a + 4, b, c]
+							v5 = out[a + 1, b, c] - out[a + 5, b, c]
+							v6 = out[a + 2, b, c] - out[a + 6, b, c]
+							v7 = out[a + 3, b, c] - out[a + 7, b, c]
+							# stage 2
+							v10 = v0 + v2
+							v11 = v1 + v3
+							v12 = v0 - v2
+							v13 = v1 - v3
+							v14 = v4 + v6
+							v17 = v5 + v7
+							v18 = v4 - v6
+							v19 = v5 - v7
+							# stage 3
+							out[a + 0, b, c] = v10 + v11
+							out[a + 1, b, c] = v10 - v11
+							out[a + 2, b, c] = v12 + v13
+							out[a + 3, b, c] = v12 - v13
+							out[a + 4, b, c] = v14 + v17
+							out[a + 5, b, c] = v14 - v17
+							out[a + 6, b, c] = v18 + v19
+							out[a + 7, b, c] = v18 - v19
