@@ -1,61 +1,145 @@
-# cython: boundscheck=False, wraparound=False, cdivision=True, nonecheck=False
-from cython.parallel import prange
-from libc.string cimport memcpy
-from libc.stdlib cimport malloc, free
-from libc.stddef cimport size_t
-import array
-from cpython.long cimport PyLong_AsVoidPtr
+# distutils: language = c++
+# distutils: extra_compile_args = /O2 /openmp
+# distutils: extra_link_args = /openmp
 
-cdef inline tuple vs_to_np(frames):
-	cdef int nframes = frames.num_frames
-	if nframes == 0: return ()
-	cdef:
-		object first_frame = frames[0]
-		int num_planes = first_frame.format.num_planes
-		int bits_per_sample = first_frame.format.bits_per_sample
-		size_t element_size
-	if bits_per_sample == 8: element_size = 1
-	elif bits_per_sample == 16: element_size = 2
-	elif bits_per_sample == 32: element_size = 4
-	else: raise ValueError("Unsupported bit depth: %d" % bits_per_sample)
-	cdef:
-		list result_planes = [None] * num_planes
-		int plane, height, width, i, j
-		Py_ssize_t total_elements, total_bytes
-		void **src_ptrs = NULL
-		int *src_pitches = NULL
-		char *dst
-		size_t dst_offset
-		object buf_obj, mv, ptr_obj
-	for plane in range(num_planes):
-		height = first_frame.get_height(plane)
-		width  = first_frame.get_width(plane)
-		total_elements = nframes * height * width
-		total_bytes = total_elements * element_size
-		if bits_per_sample == 8: buf_obj = bytearray(total_bytes)
-		elif bits_per_sample == 16: buf_obj = array.array('H', [0]) * total_elements
-		elif bits_per_sample == 32: buf_obj = array.array('f', [0.0]) * total_elements
-		mv = memoryview(buf_obj)
-		if bits_per_sample == 8: mv = mv.cast('B')
-		elif bits_per_sample == 16: mv = mv.cast('H')
-		elif bits_per_sample == 32: mv = mv.cast('f')
-		try: mv = mv.reshape((nframes, height, width))
-		except Exception as e: raise ValueError("Reshape failed: " + str(e))
-		result_planes[plane] = mv
-		src_ptrs = <void **> malloc(nframes * sizeof(void *))
-		src_pitches = <int*> malloc(nframes * sizeof(int))
-		if src_ptrs == NULL or src_pitches == NULL:
-			if src_ptrs: free(src_ptrs)
-			if src_pitches: free(src_pitches)
-			raise MemoryError("Failed to allocate source pointer arrays")
-		for i in range(nframes):
-			ptr_obj = frames[i].get_read_ptr(plane)
-			src_ptrs[i] = PyLong_AsVoidPtr(ptr_obj)
-			src_pitches[i] = frames[i].get_stride(plane)
-		dst = <char*> mv.data
-		for i in prange(nframes, schedule='static', nogil=True):
-			dst_offset = i * height * width * element_size
-			for j in range(height): memcpy(dst + dst_offset + j * width * element_size, <char*>src_ptrs[i] + j * src_pitches[i], width * element_size)
-		free(src_ptrs)
-		free(src_pitches)
-	return tuple(result_planes)
+cimport cython
+cimport numpy as cnp
+cimport vapoursynth.vsapi as vsapi
+from libc.string cimport memcpy
+from cython.parallel cimport prange
+
+cdef extern from "VapourSynth.h":
+	ctypedef struct VSNode: pass
+	ctypedef struct VSFrame: pass
+	ctypedef struct VSCore: pass
+	ctypedef struct VSApi: pass
+	VSCore* getCore(VSApi*)
+	const VSFrame* getFrame(int n, VSNode* node, VSCore* core) except +
+	void freeFrame(const VSFrame* frame)
+	const unsigned char* getReadPtr(const VSFrame* frame, int plane)
+	int getStride(const VSFrame* frame, int plane)
+	int getFrameWidth(const VSFrame* frame, int plane)
+	int getFrameHeight(const VSFrame* frame, int plane)
+	const VSFormat* getFrameFormat(const VSFrame* frame)
+	const VSApi* getVSApi(int version)
+	ctypedef struct VSFormat:
+		int bytesPerSample
+		int bitsPerSample
+		int colorFamily
+		int subsamplingW
+		int subsamplingH
+		bint isConstantFormat
+
+	# Vapoursynthの定数を extern from ブロック内に宣言
+	int cfYUV;
+	int stUSHORT;
+
+cdef extern from "numpy/arrayobject.h":
+	int PyArray_API_VERSION
+	int NPY_ARRAY_C_CONTIGUOUS
+	int NPY_ARRAY_WRITEABLE
+	int NPY_ARRAY_EMPTY
+	int NPY_USHORT
+	object PyArray_EMPTY(int nd, cnp.npy_intp* dims, int dtype, int flags)
+
+cnp.import_array()
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+@cython.cdivision(True)
+@cython.inline(True)
+cdef tuple[unsigned short[:, :, :], unsigned short[:, :, :], unsigned short[:, :, :]] get_yuv444p16_planes(vsapi.VSNode node, int num_frames):
+	cdef vsapi.VSCore* core = vsapi.getCore(vsapi.getVSApi(0))
+	cdef const vsapi.VSFrame* frame = NULL
+	cdef const vsapi.VSFormat* format = NULL
+	cdef int width, height
+	cdef int frame_idx, plane_idx, row
+	cdef const unsigned char* src_ptr
+	cdef int src_stride
+	cdef unsigned short* dest_ptr_row
+	cdef int dest_stride
+	cdef cnp.npy_intp dims[3]
+	cdef list acquired_frames = []
+	for frame_idx in range(num_frames):
+		frame = core.getFrame(frame_idx, node)
+		if frame is NULL:
+			with gil:
+				for f_obj in acquired_frames:
+					vsapi.freeFrame(<const vsapi.VSFrame*> f_obj)
+			raise RuntimeError(f"フレーム {frame_idx} の取得に失敗しました")
+		with gil:
+			acquired_frames.append(<object>frame)
+
+	if num_frames > 0:
+		with gil:
+			frame = <const vsapi.VSFrame*> acquired_frames[0]
+
+		format = vsapi.getFrameFormat(frame)
+		if format.colorFamily != vsapi.cfYUV or format.bytesPerSample != 2 or format.bitsPerSample != 16 or format.subsamplingW != 0 or format.subsamplingH != 0:
+			with gil:
+				for f_obj in acquired_frames:
+					vsapi.freeFrame(<const vsapi.VSFrame*> f_obj)
+			raise ValueError("入力クリップはYUV444P16フォーマットである必要があります")
+
+		width = vsapi.getFrameWidth(frame, 0)
+		height = vsapi.getFrameHeight(frame, 0)
+	else:
+		with gil:
+			return (<unsigned short[:, :, :]>cnp.PyArray_EMPTY(3, <cnp.npy_intp*>&([0, 0, 0])[0], cnp.NPY_USHORT, NPY_ARRAY_EMPTY | NPY_ARRAY_C_CONTIGUOUS | NPY_ARRAY_WRITEABLE),
+					<unsigned short[:, :, :]>cnp.PyArray_EMPTY(3, <cnp.npy_intp*>&([0, 0, 0])[0], cnp.NPY_USHORT, NPY_ARRAY_EMPTY | NPY_ARRAY_C_CONTIGUOUS | NPY_ARRAY_WRITEABLE),
+					<unsigned short[:, :, :]>cnp.PyArray_EMPTY(3, <cnp.npy_intp*>&([0, 0, 0])[0], cnp.NPY_USHORT, NPY_ARRAY_EMPTY | NPY_ARRAY_C_CONTIGUOUS | NPY_ARRAY_WRITEABLE))
+
+	dims[0] = num_frames
+	dims[1] = height
+	dims[2] = width
+
+	cdef object y_plane_obj
+	cdef object u_plane_obj
+	cdef object v_plane_obj
+
+	with gil:
+		y_plane_obj = cnp.PyArray_EMPTY(3, dims, cnp.NPY_USHORT, NPY_ARRAY_EMPTY | NPY_ARRAY_C_CONTIGUOUS | NPY_ARRAY_WRITEABLE)
+		u_plane_obj = cnp.PyArray_EMPTY(3, dims, cnp.NPY_USHORT, NPY_ARRAY_EMPTY | NPY_ARRAY_C_CONTIGUOUS | NPY_ARRAY_WRITEABLE)
+		v_plane_obj = cnp.PyArray_EMPTY(3, dims, cnp.NPY_USHORT, NPY_ARRAY_EMPTY | NPY_ARRAY_C_CONTIGUOUS | NPY_ARRAY_WRITEABLE)
+
+	cdef unsigned short[:, :, :] y_plane_mv = y_plane_obj
+	cdef unsigned short[:, :, :] u_plane_mv = u_plane_obj
+	cdef unsigned short[:, :, :] v_plane_mv = v_plane_obj
+
+	dest_stride = width * sizeof(unsigned short)
+
+	cdef const unsigned char* y_src_ptr
+	cdef const unsigned char* u_src_ptr
+	cdef const unsigned char* v_src_ptr
+	cdef int y_src_stride
+	cdef int u_src_stride
+	cdef int v_src_stride
+
+	for frame_idx in prange(num_frames, nogil=True):
+		cdef const vsapi.VSFrame* current_frame = NULL
+		with gil:
+			 current_frame = <const vsapi.VSFrame*> acquired_frames[frame_idx]
+
+		y_src_ptr = vsapi.getReadPtr(current_frame, 0)
+		y_src_stride = vsapi.getStride(current_frame, 0)
+		u_src_ptr = vsapi.getReadPtr(current_frame, 1)
+		u_src_stride = vsapi.getStride(current_frame, 1)
+		v_src_ptr = vsapi.getReadPtr(current_frame, 2)
+		v_src_stride = vsapi.getStride(current_frame, 2)
+
+		for row in range(height):
+			dest_ptr_row = &y_plane_mv[frame_idx, row, 0]
+			memcpy(dest_ptr_row, y_src_ptr + row * y_src_stride, <size_t>width * sizeof(unsigned short))
+
+			dest_ptr_row = &u_plane_mv[frame_idx, row, 0]
+			memcpy(dest_ptr_row, u_src_ptr + row * u_src_stride, <size_t>width * sizeof(unsigned short))
+
+			dest_ptr_row = &v_plane_mv[frame_idx, row, 0]
+			memcpy(dest_ptr_row, v_src_ptr + row * v_src_stride, <size_t>width * sizeof(unsigned short))
+
+	with gil:
+		for f_obj in acquired_frames:
+			 vsapi.freeFrame(<const vsapi.VSFrame*> f_obj)
+
+	with gil:
+		return y_plane_mv, u_plane_mv, v_plane_mv
