@@ -1,7 +1,57 @@
 # cython: boundscheck=False, wraparound=False, nonecheck=False
 from cython.parallel import parallel, prange
 
-cdef inline void dct_3d_fwd(float[:, :, :] arr, float[:, :, :] out, int[8][8] matrix, float q):
+cdef inline int c2_minus_c6(int n):
+	cdef:
+		int n0 = n >> 1 + n >> 5
+		int n1 = n >> 7 + n >> 9
+		int n2 = n >> 14 + n >> 15
+		int n3 = n >> 17 + n >> 20
+		int v0 = n0 + n1
+		int v1 = n2 + n3
+		int m0 = v0 + v1
+	return m0 + n >> 21
+
+cdef inline int c2_plus_c6(int n):
+	cdef:
+		int n0 = n + n >> 2
+		int n1 = n >> 5 + n >> 6
+		int n2 = n >> 7 + n >> 12
+		int n3 = n >> 14 + n >> 17
+		int n4 = n >> 18 + n >> 19
+		int v0 = n0 + n1
+		int v1 = n2 + n3
+		int m0 = v0 + v1
+	return m0 + n4
+
+cdef inline int c4(int n):
+	cdef:
+		int n0 = n >> 1 + n >> 3
+		int n1 = n >> 4 + n >> 6
+		int n2 = n >> 8 + n >> 9
+		int n3 = n >> 11 + n >> 12
+		int n4 = n >> 14 + n >> 16
+		int n5 = n >> 17 + n >> 19
+		int v0 = n0 + n1
+		int v1 = n2 + n3
+		int v2 = n4 + n5
+		int m0 = v0 + v1
+		int m1 = v2 + n >> 20
+	return m0 + m1
+
+cdef inline int c6(int n):
+	cdef:
+		int n0 = n >> 2 + n >> 3
+		int n1 = n >> 8 + n >> 10
+		int n2 = n >> 13 + n >> 14
+		int n3 = n >> 15 + n >> 16
+		int n4 = n >> 18 + n >> 20
+		int v0 = n0 + n1
+		int v1 = n2 + n3
+		int m0 = v0 + v1
+	return m0 + n4
+
+cdef inline void dct_3d_fwd(int[:, :, :] arr, int[:, :, :] out, int[8][8] matrix, int q):
 	cdef:
 		int i, j, k, l, m, n, a, b, c
 		int x = <int> arr.shape[0]
@@ -16,13 +66,12 @@ cdef inline void dct_3d_fwd(float[:, :, :] arr, float[:, :, :] out, int[8][8] ma
 						   [0.44998811, 0.11470097, 0.12176591, 0.13529903, 0.15909482, 0.2024893 , 0.2939689 , 0.57664074],
 						   [0.65328148, 0.16652001, 0.1767767 , 0.19642374, 0.23096988, 0.2939689 , 0.4267767 , 0.8371526 ],
 						   [1.28145772, 0.32664074, 0.34675996, 0.38529903, 0.45306372, 0.57664074, 0.8371526 , 1.6421339 ]]
-		float v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v17, v18, v19, v20, v23, v24
-		float thq = (1 - q * 0.01) / 2048
+		int v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v17, v18, v19, v20, v23, v24
 	if not(0 <= q <= 100): raise ValueError("Quality must be a range [0 - 100]")
 	with nogil, parallel():
 		for l in prange(8): # threshold
 			for m in prange(8):
-				thr[l][m] = thq / mul[l][m] * matrix[l][m]
+				thr[l][m] = matrix[l][m] * (1 - q * 0.01) / (mul[l][m] * 2048)
 		for i in prange(x >> 3):
 			for j in prange(y >> 3):
 				for k in prange(z >> 3):
@@ -44,14 +93,14 @@ cdef inline void dct_3d_fwd(float[:, :, :] arr, float[:, :, :] out, int[8][8] ma
 							v10 = v1 - v2
 							v11 = v0 - v3
 							v12 = v4 + v5
-							v13 = (v5 + v6) * 0.70710677
+							v13 = c4(v5 + v6)
 							v14 = v6 + v7
 							# stage 3
-							v17 = (v10 + v11) * 0.70710677
-							v18 = (v14 - v12) * 0.38268343
+							v17 = c4(v10 + v11)
+							v18 = c6(v14 - v12)
 							# stage 4
-							v19 = v12 * 0.5411961 - v18
-							v20 = v14 * 1.306563 - v18
+							v19 = c2_minus_c6(v12) - v18
+							v20 = c2_plus_c6(v14) - v18
 							# stage 5
 							v23 = v13 + v7
 							v24 = v7 - v13
@@ -82,14 +131,14 @@ cdef inline void dct_3d_fwd(float[:, :, :] arr, float[:, :, :] out, int[8][8] ma
 							v10 = v1 - v2
 							v11 = v0 - v3
 							v12 = v4 + v5
-							v13 = (v5 + v6) * 0.70710677
+							v13 = c4(v5 + v6)
 							v14 = v6 + v7
 							# stage 3
-							v17 = (v10 + v11) * 0.70710677
-							v18 = (v14 - v12) * 0.38268343
+							v17 = c4(v10 + v11)
+							v18 = c6(v14 - v12)
 							# stage 4
-							v19 = v12 * 0.5411961 - v18
-							v20 = v14 * 1.306563 - v18
+							v19 = c2_minus_c6(v12) - v18
+							v20 = c2_plus_c6(v14) - v18
 							# stage 5
 							v23 = v13 + v7
 							v24 = v7 - v13
