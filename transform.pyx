@@ -1,55 +1,33 @@
 # cython: boundscheck=False, wraparound=False, nonecheck=False
 from cython.parallel import parallel, prange
 
-cdef inline int c2_minus_c6(int n):
-	cdef:
-		int n0 = n >> 1 + n >> 5
-		int n1 = n >> 7 + n >> 9
-		int n2 = n >> 14 + n >> 15
-		int n3 = n >> 17 + n >> 20
-		int v0 = n0 + n1
-		int v1 = n2 + n3
-		int m0 = v0 + v1
-	return m0 + n >> 21
+cdef inline int c2_minus_c6(int i):
+	cdef int n
+	n = ~(i - 1) if i > 0x7FFFFFFF else i
+	n = n >> 1 + n >> 5 + n >> 7 + n >> 9 + n >> 14 + n >> 15 + n >> 17 + n >> 20 + n >> 21
+	n = ~n + 1 if i > 0x7FFFFFFF else n
+	return n
 
-cdef inline int c2_plus_c6(int n):
-	cdef:
-		int n0 = n + n >> 2
-		int n1 = n >> 5 + n >> 6
-		int n2 = n >> 7 + n >> 12
-		int n3 = n >> 14 + n >> 17
-		int n4 = n >> 18 + n >> 19
-		int v0 = n0 + n1
-		int v1 = n2 + n3
-		int m0 = v0 + v1
-	return m0 + n4
+cdef inline int c2_plus_c6(int i):
+	cdef int n
+	n = ~(i - 1) if i > 0x7FFFFFFF else i
+	n += n >> 2 + n >> 5 + n >> 6 + n >> 7 + n >> 12 + n >> 14 + n >> 17 + n >> 18 + n >> 19
+	n = ~n + 1 if i > 0x7FFFFFFF else n
+	return n
 
-cdef inline int c4(int n):
-	cdef:
-		int n0 = n >> 1 + n >> 3
-		int n1 = n >> 4 + n >> 6
-		int n2 = n >> 8 + n >> 9
-		int n3 = n >> 11 + n >> 12
-		int n4 = n >> 14 + n >> 16
-		int n5 = n >> 17 + n >> 19
-		int v0 = n0 + n1
-		int v1 = n2 + n3
-		int v2 = n4 + n5
-		int m0 = v0 + v1
-		int m1 = v2 + n >> 20
-	return m0 + m1
+cdef inline int c4(int i):
+	cdef int n
+	n = ~(i - 1) if i > 0x7FFFFFFF else i
+	n = n >> 1 + n >> 3 + n >> 4 + n >> 6 + n >> 8 + n >> 9 + n >> 11 + n >> 12 + n >> 14 + n >> 16 + n >> 17 + n >> 19 + n >> 20
+	n = ~n + 1 if i > 0x7FFFFFFF else n
+	return n
 
-cdef inline int c6(int n):
-	cdef:
-		int n0 = n >> 2 + n >> 3
-		int n1 = n >> 8 + n >> 10
-		int n2 = n >> 13 + n >> 14
-		int n3 = n >> 15 + n >> 16
-		int n4 = n >> 18 + n >> 20
-		int v0 = n0 + n1
-		int v1 = n2 + n3
-		int m0 = v0 + v1
-	return m0 + n4
+cdef inline int c6(int i):
+	cdef int n
+	n = ~(i - 1) if i > 0x7FFFFFFF else i
+	n = n >> 2 + n >> 3 + n >> 8 + n >> 10 + n >> 13 + n >> 14 + n >> 15 + n >> 16 + n >> 18 + n >> 20
+	n = ~n + 1 if i > 0x7FFFFFFF else n
+	return n
 
 cdef inline void dct_3d_fwd(int[:, :, :] arr, int[:, :, :] out, int[8][8] matrix, int q):
 	cdef:
