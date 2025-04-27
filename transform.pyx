@@ -33,53 +33,39 @@ cdef inline int c6(int i):
 	n = ~n + 1 if i > 0x7FFFFFFF else n
 	return n
 
-cdef inline int mul_dct(int l, int m, int n):
-	cdef int j, k
+cdef inline int mul_dct(int l, int m, int i):
+	cdef int j, k, o
+	cdef int n = ~(i - 1) if i > 0x7FFFFFFF else i
 	# shaft
 	if l == 0 and m == 0: return n
 	if l == 1 and m == 1:
-		j = n >> 5 + n >> 6; k = n >> 7 + n >> 10
-		return j + j >> 13 + k + k >> 6 + n >> 4
-	if l == 2 and m == 2:
-		j = n >> 4 + n >> 6 + n >> 7
-		return j + j >> 14 + n >> 14
+		o = n >> 4 + n >> 9 + n >> 11 + n >> 15 + n >> 20
+	if l + m == l * m:
+		o = n >> 4 + n >> 6 - (n >> 8 + n >> 10 + n >> 16 + n >> 18)
 	if l == 3 and m == 3:
-		j = n >> 5 + n >> 6 + n >> 7
-		return j + j >> 12 + n >> 10 + n >> 11 + n >> 15
+		return
 	if l == 4 and m == 4: return n >> 3
 	if l == 5 and m == 5:
-		j = n >> 6 + n >> 7
-		return j + j >> 9 + n >> 9 + n >> 11 + n >> 14
+		return
 	if l == 6 and m == 6:
-		j = n >> 7 + n >> 10 + n >> 11
-		return j + j >> 5
-	if l == 7 and m == 7: return n >> 10
+		return
+	if l == 7 and m == 7:
+		return
 	# 0-line
 	if (l == 0 and m == 1) or (l == 1 and m == 0):
-		j = n >> 3 + n >> 4
-		k = j + n >> 5
-		return k + k >> 16 + j >> 3 + j >> 6 + j >> 12
+		return
 	if (l == 0 and m == 2) or (l == 2 and m == 0):
-		j = n >> 3 + n >> 4
-		k = j + n >> 5 + n >> 7
-		return k + k >> 6 + j >> 15
+		return
 	if (l == 0 and m == 3) or (l == 3 and m == 0):
-		j = n >> 4 + n >> 6
-		k = j + n >> 3
-		return k + k >> 8 + j >> 4 + j >> 12 + j >> 15
+		return
 	if (l == 0 and m == 4) or (l == 4 and m == 0):
-		j = n >> 5 + n >> 6 + n >> 8
-		return j + j >> 5 + j >> 11 + n >> 3
+		return
 	if (l == 0 and m == 5) or (l == 5 and m == 0):
-		j = n >> 7 + n >> 8
-		k = j + j >> 2
-		return k + k >> 7 + j >> 12 + n >> 3
+		return
 	if (l == 0 and m == 6) or (l == 6 and m == 0):
-		j = n >> 4 + n >> 5
-		return j + j >> 6 + j >> 16 + n >> 14 + n >> 19
+		return
 	if (l == 0 and m == 7) or (l == 7 and m == 0):
-		j = n >> 5 + n >> 6
-		return j + j >> 5 + j >> 14 + n >> 13 + n >> 17
+		return
 	# 1-line
 	if (l == 1 and m == 2) or (l == 2 and m == 1):
 		return
@@ -128,6 +114,8 @@ cdef inline int mul_dct(int l, int m, int n):
 	# 6-line
 	if (l == 6 and m == 7) or (l == 7 and m == 6):
 		return
+	if i > 0x7FFFFFFF: return ~o + 1
+	else: return o
 
 cdef inline void dct_3d_fwd(int[:, :, :] arr, int[:, :, :] out, int[8][8] matrix, int q):
 	cdef:
@@ -136,14 +124,6 @@ cdef inline void dct_3d_fwd(int[:, :, :] arr, int[:, :, :] out, int[8][8] matrix
 		int y = <int> arr.shape[1]
 		int z = <int> arr.shape[2]
 		float[8][8] thr
-		float[8][8] mul = [[1.        , 0.25489779, 0.27059805, 0.30067244, 0.35355339, 0.44998811, 0.65328148, 1.28145772],
-						   [0.25489779, 0.06497288, 0.06897484, 0.07664074, 0.09011998, 0.11470097, 0.16652001, 0.32664074],
-						   [0.27059805, 0.06897484, 0.0732233 , 0.08136138, 0.09567086, 0.12176591, 0.1767767 , 0.34675996],
-						   [0.30067244, 0.07664074, 0.08136138, 0.09040392, 0.10630376, 0.13529903, 0.19642374, 0.38529903],
-						   [0.35355339, 0.09011998, 0.09567086, 0.10630376, 0.125     , 0.15909482, 0.23096988, 0.45306372],
-						   [0.44998811, 0.11470097, 0.12176591, 0.13529903, 0.15909482, 0.2024893 , 0.2939689 , 0.57664074],
-						   [0.65328148, 0.16652001, 0.1767767 , 0.19642374, 0.23096988, 0.2939689 , 0.4267767 , 0.8371526 ],
-						   [1.28145772, 0.32664074, 0.34675996, 0.38529903, 0.45306372, 0.57664074, 0.8371526 , 1.6421339 ]]
 		int v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v17, v18, v19, v20, v23, v24
 	if not(0 <= q <= 100): raise ValueError("Quality must be a range [0 - 100]")
 	with nogil, parallel():
