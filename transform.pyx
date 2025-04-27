@@ -2,32 +2,132 @@
 from cython.parallel import parallel, prange
 
 cdef inline int c2_minus_c6(int i):
-	cdef int n
+	cdef int l, m, n
 	n = ~(i - 1) if i > 0x7FFFFFFF else i
-	n = n >> 1 + n >> 5 + n >> 7 + n >> 9 + n >> 14 + n >> 15 + n >> 17 + n >> 20 + n >> 21
+	l = n >> 1 + n >> 5; m = n >> 9 + n >> 14
+	n = l + l >> 16 + m + m >> 6 + n >> 7
 	n = ~n + 1 if i > 0x7FFFFFFF else n
 	return n
 
 cdef inline int c2_plus_c6(int i):
 	cdef int n
 	n = ~(i - 1) if i > 0x7FFFFFFF else i
-	n += n >> 2 + n >> 5 + n >> 6 + n >> 7 + n >> 12 + n >> 14 + n >> 17 + n >> 18 + n >> 19
+	n += n >> 2 + n >> 5 + n >> 6 + n >> 7
+	n += n >> 12
 	n = ~n + 1 if i > 0x7FFFFFFF else n
 	return n
 
 cdef inline int c4(int i):
-	cdef int n
+	cdef int k, l, n
 	n = ~(i - 1) if i > 0x7FFFFFFF else i
-	n = n >> 1 + n >> 3 + n >> 4 + n >> 6 + n >> 8 + n >> 9 + n >> 11 + n >> 12 + n >> 14 + n >> 16 + n >> 17 + n >> 19 + n >> 20
+	k = n >> 1 + n >> 3 + n >> 4; l = n >> 11 + n >> 12
+	n = k + k >> 5 + k >> 13 + l + l >> 8
 	n = ~n + 1 if i > 0x7FFFFFFF else n
 	return n
 
 cdef inline int c6(int i):
-	cdef int n
+	cdef int l, m, n
 	n = ~(i - 1) if i > 0x7FFFFFFF else i
-	n = n >> 2 + n >> 3 + n >> 8 + n >> 10 + n >> 13 + n >> 14 + n >> 15 + n >> 16 + n >> 18 + n >> 20
+	l = n >> 2 + n >> 3; m = n >> 8 + n >> 10
+	n = l + l >> 11 + l >> 13 + m + m >> 10
 	n = ~n + 1 if i > 0x7FFFFFFF else n
 	return n
+
+cdef inline int mul_dct(int l, int m, int n):
+	cdef int j, k
+	# shaft
+	if l == 0 and m == 0: return n
+	if l == 1 and m == 1:
+		j = n >> 5 + n >> 6; k = n >> 7 + n >> 10
+		return j + j >> 13 + k + k >> 6 + n >> 4
+	if l == 2 and m == 2:
+		j = n >> 4 + n >> 6 + n >> 7
+		return j + j >> 14 + n >> 14
+	if l == 3 and m == 3:
+		j = n >> 5 + n >> 6 + n >> 7
+		return j + j >> 12 + n >> 10 + n >> 11 + n >> 15
+	if l == 4 and m == 4: return n >> 3
+	if l == 5 and m == 5:
+		j = n >> 6 + n >> 7
+		return j + j >> 9 + n >> 9 + n >> 11 + n >> 14
+	if l == 6 and m == 6:
+		j = n >> 7 + n >> 10 + n >> 11
+		return j + j >> 5
+	if l == 7 and m == 7: return n >> 10
+	# 0-line
+	if (l == 0 and m == 1) or (l == 1 and m == 0):
+		j = n >> 3 + n >> 4
+		k = j + n >> 5
+		return k + k >> 16 + j >> 3 + j >> 6 + j >> 12
+	if (l == 0 and m == 2) or (l == 2 and m == 0):
+		j = n >> 3 + n >> 4
+		k = j + n >> 5 + n >> 7
+		return k + k >> 6 + j >> 15
+	if (l == 0 and m == 3) or (l == 3 and m == 0):
+		j = n >> 4 + n >> 6
+		k = j + n >> 3
+		return k + k >> 8 + j >> 4 + j >> 12 + j >> 15
+	if (l == 0 and m == 4) or (l == 4 and m == 0):
+		j = n >> 5 + n >> 6 + n >> 8
+		return j + j >> 5 + j >> 11 + n >> 3
+	if (l == 0 and m == 5) or (l == 5 and m == 0):
+		j = n >> 7 + n >> 8
+		k = j + j >> 2
+		return k + k >> 7 + j >> 12 + n >> 3
+	if (l == 0 and m == 6) or (l == 6 and m == 0):
+		j = n >> 4 + n >> 5
+		return j + j >> 6 + j >> 16 + n >> 14 + n >> 19
+	if (l == 0 and m == 7) or (l == 7 and m == 0):
+		j = n >> 5 + n >> 6
+		return j + j >> 5 + j >> 14 + n >> 13 + n >> 17
+	# 1-line
+	if (l == 1 and m == 2) or (l == 2 and m == 1):
+		return
+	if (l == 1 and m == 3) or (l == 3 and m == 1):
+		return
+	if (l == 1 and m == 4) or (l == 4 and m == 1):
+		return
+	if (l == 1 and m == 5) or (l == 5 and m == 1):
+		return
+	if (l == 1 and m == 6) or (l == 6 and m == 1):
+		return
+	if (l == 1 and m == 7) or (l == 7 and m == 1):
+		return
+	# 2-line
+	if (l == 2 and m == 3) or (l == 3 and m == 2):
+		return
+	if (l == 2 and m == 4) or (l == 4 and m == 2):
+		return
+	if (l == 2 and m == 5) or (l == 5 and m == 2):
+		return
+	if (l == 2 and m == 6) or (l == 6 and m == 2):
+		return
+	if (l == 2 and m == 7) or (l == 7 and m == 2):
+		return
+	# 3-line
+	if (l == 3 and m == 4) or (l == 4 and m == 3):
+		return
+	if (l == 3 and m == 5) or (l == 5 and m == 3):
+		return
+	if (l == 3 and m == 6) or (l == 6 and m == 3):
+		return
+	if (l == 3 and m == 7) or (l == 7 and m == 3):
+		return
+	# 4-line
+	if (l == 4 and m == 5) or (l == 5 and m == 4):
+		return
+	if (l == 4 and m == 6) or (l == 6 and m == 4):
+		return
+	if (l == 4 and m == 7) or (l == 7 and m == 4):
+		return
+	# 5-line
+	if (l == 5 and m == 6) or (l == 6 and m == 5):
+		return
+	if (l == 5 and m == 7) or (l == 7 and m == 5):
+		return
+	# 6-line
+	if (l == 6 and m == 7) or (l == 7 and m == 6):
+		return
 
 cdef inline void dct_3d_fwd(int[:, :, :] arr, int[:, :, :] out, int[8][8] matrix, int q):
 	cdef:
@@ -133,7 +233,7 @@ cdef inline void dct_3d_fwd(int[:, :, :] arr, int[:, :, :] out, int[8][8] matrix
 						for m in prange(8):
 							for n in prange(8):
 								a = i << 3 + l; b = j << 3 + m; c = k << 3 + n
-								out[a, b, c] = 0 if out[a, b, c] < thr[m][n] * out[a, j << 3, k << 3] else out[a, b, c] * mul[m][n]
+								out[a, b, c] = 0 if out[a, b, c] < thr[m][n] * out[a, j << 3, k << 3] else mul_dct(m, n, out[a, b, c])
 					for l in prange(8): # DCT(Time-axis)
 						for m in prange(8):
 							a = i << 3; b = j << 3 + l; c = k << 3 + m
