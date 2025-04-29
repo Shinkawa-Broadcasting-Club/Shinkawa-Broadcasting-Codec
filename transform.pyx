@@ -29,108 +29,20 @@ cdef inline int c6(int i) nogil:
 	n = -n if i > 0x7FFFFFFF else n
 	return n
 
-cdef inline int mul_dct(int l, int m, int i) nogil:
-	cdef int j, o
-	cdef int[23] p, m
-	cdef int n = -i if i > 0x7FFFFFFF else i
-	for j in prange(23): p[j] = 0x7FFFFFFF; m[j] = 0x7FFFFFFF
-	# shaft
-	if l == 0 and m == 0: return n
-	if l == 1 and m == 1: p = [4, 9, 11, 15, 20]
-	if l == 2 and m == 2: p = [4, 6]; m = [8, 10, 16, 18]
-	if l == 3 and m == 3: p = [3, 11, 14, 16]; m = [5, 8, 18, 21]
-	if l == 4 and m == 4: return n >> 3
-	if l == 5 and m == 5: p = []; m = []
-	if l == 6 and m == 6:
-		return
-	if l == 7 and m == 7:
-		return
-	# 0-line
-	if (l == 0 and m == 1) or (l == 1 and m == 0):
-		return
-	if (l == 0 and m == 2) or (l == 2 and m == 0):
-		return
-	if (l == 0 and m == 3) or (l == 3 and m == 0):
-		return
-	if (l == 0 and m == 4) or (l == 4 and m == 0):
-		return
-	if (l == 0 and m == 5) or (l == 5 and m == 0):
-		return
-	if (l == 0 and m == 6) or (l == 6 and m == 0):
-		return
-	if (l == 0 and m == 7) or (l == 7 and m == 0):
-		return
-	# 1-line
-	if (l == 1 and m == 2) or (l == 2 and m == 1):
-		return
-	if (l == 1 and m == 3) or (l == 3 and m == 1):
-		return
-	if (l == 1 and m == 4) or (l == 4 and m == 1):
-		return
-	if (l == 1 and m == 5) or (l == 5 and m == 1):
-		return
-	if (l == 1 and m == 6) or (l == 6 and m == 1):
-		return
-	if (l == 1 and m == 7) or (l == 7 and m == 1):
-		return
-	# 2-line
-	if (l == 2 and m == 3) or (l == 3 and m == 2):
-		return
-	if (l == 2 and m == 4) or (l == 4 and m == 2):
-		return
-	if (l == 2 and m == 5) or (l == 5 and m == 2):
-		return
-	if (l == 2 and m == 6) or (l == 6 and m == 2):
-		return
-	if (l == 2 and m == 7) or (l == 7 and m == 2):
-		return
-	# 3-line
-	if (l == 3 and m == 4) or (l == 4 and m == 3):
-		return
-	if (l == 3 and m == 5) or (l == 5 and m == 3):
-		return
-	if (l == 3 and m == 6) or (l == 6 and m == 3):
-		return
-	if (l == 3 and m == 7) or (l == 7 and m == 3):
-		return
-	# 4-line
-	if (l == 4 and m == 5) or (l == 5 and m == 4):
-		return
-	if (l == 4 and m == 6) or (l == 6 and m == 4):
-		return
-	if (l == 4 and m == 7) or (l == 7 and m == 4):
-		return
-	# 5-line
-	if (l == 5 and m == 6) or (l == 6 and m == 5):
-		return
-	if (l == 5 and m == 7) or (l == 7 and m == 5):
-		return
-	# 6-line
-	if (l == 6 and m == 7) or (l == 7 and m == 6):
-		return
-	for j in range(23):
-		if p[j] != 0x7FFFFFFF: o += n >> p[j]
-	for j in range(23):
-		if m[j] != 0x7FFFFFFF: o -= n >> m[j]
-	if i > 0x7FFFFFFF: return -o
-	else: return o
-
-cdef inline int mul_dct_rep(int l, int m, int i) nogil:
-	return
-
 cdef inline void dct_3d_fwd(int[:, :, :] arr, int[:, :, :] out, int[8][8] matrix, int q) nogil:
 	cdef:
 		int i, j, k, l, m, n, a, b, c
 		int x = <int> arr.shape[0]
 		int y = <int> arr.shape[1]
 		int z = <int> arr.shape[2]
-		float[8][8] thr
+		int[8][8] thr
+		int thq = (100 - q) << 7
 		int v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v17, v18, v19, v20, v23, v24
 	if not(0 <= q <= 100): raise ValueError("Quality must be a range [0 - 100]")
 	with nogil, parallel():
 		for l in prange(8): # threshold
 			for m in prange(8):
-				thr[l][m] = mul_dct_rep(l, m, matrix[l][m] * (1 - q * 0.01) / 2048)
+				thr[l][m] = matrix[l][m] * thq // 100
 		for i in prange(x >> 3):
 			for j in prange(y >> 3):
 				for k in prange(z >> 3):
@@ -214,7 +126,7 @@ cdef inline void dct_3d_fwd(int[:, :, :] arr, int[:, :, :] out, int[8][8] matrix
 						for m in prange(8):
 							for n in prange(8):
 								a = i << 3 + l; b = j << 3 + m; c = k << 3 + n
-								out[a, b, c] = 0 if out[a, b, c] < thr[m][n] * out[a, j << 3, k << 3] else mul_dct(m, n, out[a, b, c])
+								out[a, b, c] = 0 if out[a, b, c] < thr[m][n] * out[a, j << 3, k << 3] else out[a, b, c]
 					for l in prange(8): # DCT(Time-axis)
 						for m in prange(8):
 							a = i << 3; b = j << 3 + l; c = k << 3 + m
@@ -246,13 +158,13 @@ cdef inline void dct_3d_fwd(int[:, :, :] arr, int[:, :, :] out, int[8][8] matrix
 							out[a + 6, b, c] = v18 + v19
 							out[a + 7, b, c] = v18 - v19
 
-cdef inline void idct_3d_fwd(int[:, :, :] arr, int[:, :, :] out):
+cdef inline void dct_3d_bwd(int[:, :, :] arr, int[:, :, :] out):
 	cdef:
 		int i, j, k, l, m, n, a, b, c
 		int x = <int> arr.shape[0]
 		int y = <int> arr.shape[1]
 		int z = <int> arr.shape[2]
-		int a0, a1, a2, a3, b0, b1, b2, b3, c0, c1, c2, c3, d0, d1, d2, d3
+		int tmp0, tmp1, tmp2, tmp3, tmp10, tmp11, tmp12, tmp13, t0, t1, t2, t3, z1, z2
 		int v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v17, v18, v19
 	with nogil, parallel():
 		for i in prange(x >> 3):
@@ -260,68 +172,66 @@ cdef inline void idct_3d_fwd(int[:, :, :] arr, int[:, :, :] out):
 				for k in prange(z >> 3):
 					for l in prange(8): # IDCT(Width-axis)
 						for m in prange(8):
-							a = i << 3 + l; b = j << 3 + m; c = k << 3
-							# stage 1
-							a0 = arr[a, b, c + 0] + arr[a, b, c + 4]
-							a1 = arr[a, b, c + 0] - arr[a, b, c + 4]
-							t = (arr[a, b, c + 2] + arr[a, b, c + 6]) * 0.541196100
-							b0 = arr[a, b, c + 7] + arr[a, b, c + 1]
-							b1 = arr[a, b, c + 5] + arr[a, b, c + 3]
-							b2 = arr[a, b, c + 7] - arr[a, b, c + 1]
-							b3 = arr[a, b, c + 5] - arr[a, b, c + 3]
-							# stage 2
-							a2 = t - (arr[a, b, c + 6] * 1.847759065)
-							a3 = t + (arr[a, b, c + 2] * 0.765366865)
-							# stage 3
-							c0 = a0 + a3
-							c3 = a0 - a3
-							c1 = a1 + a2
-							c2 = a1 - a2
-							d0 = b0 + b1
-							d1 = 0.382683433 * (b2 - b3)
-							d2 = 0.382683433 * (b2 + b3)
-							d3 = b0 - b1
-							# stage 4
-							arr[a, b, c + 0] = c0 + d0
-							arr[a, b, c + 1] = c1 + d1
-							arr[a, b, c + 2] = c2 + d2
-							arr[a, b, c + 3] = c3 + d3
-							arr[a, b, c + 4] = c3 - d3
-							arr[a, b, c + 5] = c2 - d2
-							arr[a, b, c + 6] = c1 - d1
-							arr[a, b, c + 7] = c0 - d0
+							tmp10 = arr[a, b, c + 0] + arr[a, b, c + 4]
+							tmp11 = arr[a, b, c + 0] - arr[a, b, c + 4]
+
+							z1 = c4(arr[a, b, c + 2])
+							z2 = c4(arr[a, b, c + 6])
+							tmp12 = z1 - z2
+							tmp13 = z1 + z2
+
+							tmp0 = tmp10 + tmp13
+							tmp3 = tmp10 - tmp13
+							tmp1 = tmp11 + tmp12
+							tmp2 = tmp11 - tmp12
+
+							z1 = (arr[a, b, c + 7] - arr[a, b, c + 1]) * 0.3826834323650898   # roughly reverses the (tmp10-tmp12)*C0_382 operation
+							t0 = arr[a, b, c + 1] + z1
+							t3 = arr[a, b, c + 7] - z1
+
+							z1 = (arr[a, b, c + 3] + arr[a, b, c + 5]) * 0.7071067811865476   # reverse the effect of the C0_707 butterfly
+							t1 = arr[a, b, c + 3] - z1
+							t2 = arr[a, b, c + 5] + z1
+
+							out[a, b, c + 0] = (tmp0 + t3) / 8.0
+							out[a, b, c + 7] = (tmp0 - t3) / 8.0
+							out[a, b, c + 1] = (tmp1 + t2) / 8.0
+							out[a, b, c + 6] = (tmp1 - t2) / 8.0
+							out[a, b, c + 2] = (tmp2 + t1) / 8.0
+							out[a, b, c + 5] = (tmp2 - t1) / 8.0
+							out[a, b, c + 3] = (tmp3 + t0) / 8.0
+							out[a, b, c + 4] = (tmp3 - t0) / 8.0
 					for l in prange(8): # IDCT(height-axis)
 						for m in prange(8):
-							a = i << 3 + l; b = j << 3; c = k << 3 + m
-							# stage 1
-							a0 = arr[a, b + 0, c] + arr[a, b + 4, c]
-							a1 = arr[a, b + 0, c] - arr[a, b + 4, c]
-							t = (arr[a, b + 2, c] + arr[a, b + 6, c]) * 0.541196100
-							b0 = arr[a, b + 7, c] + arr[a, b + 1, c]
-							b1 = arr[a, b + 5, c] + arr[a, b + 3, c]
-							b2 = arr[a, b + 7, c] - arr[a, b + 1, c]
-							b3 = arr[a, b + 5, c] - arr[a, b + 3, c]
-							# stage 2
-							a2 = t - (arr[a, b, c + 6] * 1.847759065)
-							a3 = t + (arr[a, b, c + 2] * 0.765366865)
-							# stage 3
-							c0 = a0 + a3
-							c3 = a0 - a3
-							c1 = a1 + a2
-							c2 = a1 - a2
-							d0 = b0 + b1
-							d1 = 0.382683433 * (b2 - b3)
-							d2 = 0.382683433 * (b2 + b3)
-							d3 = b0 - b1
-							# stage 4
-							arr[a, b + 0, c] = c0 + d0
-							arr[a, b + 1, c] = c1 + d1
-							arr[a, b + 2, c] = c2 + d2
-							arr[a, b + 3, c] = c3 + d3
-							arr[a, b + 4, c] = c3 - d3
-							arr[a, b + 5, c] = c2 - d2
-							arr[a, b + 6, c] = c1 - d1
-							arr[a, b + 7, c] = c0 - d0
+							tmp10 = arr[a, b, c + 0] + arr[a, b, c + 4]
+							tmp11 = arr[a, b, c + 0] - arr[a, b, c + 4]
+
+							z1 = c4(arr[a, b, c + 2])
+							z2 = c4(arr[a, b, c + 6])
+							tmp12 = z1 - z2
+							tmp13 = z1 + z2
+
+							tmp0 = tmp10 + tmp13
+							tmp3 = tmp10 - tmp13
+							tmp1 = tmp11 + tmp12
+							tmp2 = tmp11 - tmp12
+
+							z1 = (arr[a, b, c + 7] - arr[a, b, c + 1]) * 0.3826834323650898   # roughly reverses the (tmp10-tmp12)*C0_382 operation
+							t0 = arr[a, b, c + 1] + z1
+							t3 = arr[a, b, c + 7] - z1
+
+							z1 = (arr[a, b, c + 3] + arr[a, b, c + 5]) * 0.7071067811865476   # reverse the effect of the C0_707 butterfly
+							t1 = arr[a, b, c + 3] - z1
+							t2 = arr[a, b, c + 5] + z1
+
+							out[a, b, c + 0] = (tmp0 + t3) / 8.0
+							out[a, b, c + 7] = (tmp0 - t3) / 8.0
+							out[a, b, c + 1] = (tmp1 + t2) / 8.0
+							out[a, b, c + 6] = (tmp1 - t2) / 8.0
+							out[a, b, c + 2] = (tmp2 + t1) / 8.0
+							out[a, b, c + 5] = (tmp2 - t1) / 8.0
+							out[a, b, c + 3] = (tmp3 + t0) / 8.0
+							out[a, b, c + 4] = (tmp3 - t0) / 8.0
 					for l in prange(8): # IDCT(Time-axis)
 						for m in prange(8):
 							a = i << 3; b = j << 3 + l; c = k << 3 + m
