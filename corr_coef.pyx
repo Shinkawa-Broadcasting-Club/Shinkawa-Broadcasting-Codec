@@ -22,7 +22,7 @@ cdef inline void mul256_flt(float f, float n) nogil:
 cdef inline rand256(float[:, :] arr):
     cdef:
         int N = arr.shape[1]
-        float[2][256] out
+        float[3][256] out
         int* indices = <int*> malloc(N * sizeof(int))
         int i, j, k, tmp
     if N < 256: raise ValueError("入力配列の第2軸（列数）は256以上である必要があります。")
@@ -35,7 +35,7 @@ cdef inline rand256(float[:, :] arr):
         tmp = indices[i]
         indices[i] = indices[j]
         indices[j] = tmp
-        for k in range(2): out[k][i] = arr[k, indices[i]]
+        for k in range(3): out[k][i] = arr[k, indices[i]]
     free(indices)
     return out
 
@@ -61,9 +61,9 @@ cdef inline rsqrt(float n):
     _mm_store_ss(&d, _mm_rsqrt_ss(_mm_load_ss(&n)))
     return d
 
-cdef inline corr_coef(float[:, :] arr):
+cdef inline corr_coef(int[:, :] arr):
     cdef:
-        float[2][256] sample = rand256(arr)
+        int[2][256] sample = rand256(arr)
         float[5][256] tmp
         float x, y, xx, yy, xy
         unsigned short i, j
