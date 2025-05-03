@@ -17,8 +17,10 @@ cdef int EOB_HISTORY_LEN = EOB_SEQUENCE_LEN
 cdef void init_eob_sequence() nogil:
     cdef unsigned char temp_seq[16]
     cdef int i
-    for i from 0 <= i < 16: temp_seq[i] = 0 if (i % 8) == 7 else 1
-    for i from 0 <= i < EOB_SEQUENCE_LEN: EOB_SEQUENCE_BITS[i] = temp_seq[i]
+    for i from 0 <= i < 16:
+        temp_seq[i] = 0 if (i % 8) == 7 else 1
+    for i from 0 <= i < EOB_SEQUENCE_LEN:
+        EOB_SEQUENCE_BITS[i] = temp_seq[i]
 
 init_eob_sequence()
 
@@ -198,7 +200,8 @@ cdef int decode_data_block_nogil(const unsigned char *encoded_data, size_t encod
         value = (value << 8) | read_byte(encoded_data, &buffer_ptr, encoded_size, &is_eof)
         if is_eof: return -1
 
-    for k from 0 <= k < EOB_HISTORY_LEN: eob_history[k] = 0
+    for k from 0 <= k < EOB_HISTORY_LEN:
+        eob_history[k] = 0
 
     i = 0
     while i < decoded_capacity * 8 and not eob_detected:
@@ -216,14 +219,17 @@ cdef int decode_data_block_nogil(const unsigned char *encoded_data, size_t encod
                     eob_detected = 0
                     break
 
-        if eob_detected: break
+        if eob_detected:
+            break
 
         byte_idx = <size_t>(i / 8)
         bit_in_byte_idx = i % 8
 
-        if byte_idx >= decoded_capacity: return -2
+        if byte_idx >= decoded_capacity:
+             return -2
 
-        if bit_in_byte_idx == 0: decoded_buffer[byte_idx] = 0
+        if bit_in_byte_idx == 0:
+            decoded_buffer[byte_idx] = 0
         decoded_buffer[byte_idx] |= (decoded_symbol << (7 - bit_in_byte_idx))
 
         i += 1
@@ -258,7 +264,8 @@ def encode(bytes input_data):
         encoded_data = output_buffer[:encoded_byte_size]
         return encoded_data
 
-    finally: free(output_buffer)
+    finally:
+        free(output_buffer)
 
 def decode(bytes encoded_data):
     cdef size_t encoded_size = len(encoded_data)
@@ -284,7 +291,9 @@ def decode(bytes encoded_data):
             print("メモリ確保に失敗しました")
             return None
 
-        ret = decode_data_block_nogil(current_encoded_ptr, current_encoded_size, decoded_buffer, decoded_capacity, &decoded_bit_size, &encoded_bytes_read_block)
+        ret = decode_data_block_nogil(current_encoded_ptr, current_encoded_size,
+                                      decoded_buffer, decoded_capacity,
+                                      &decoded_bit_size, &encoded_bytes_read_block)
 
         if ret != 0:
             print(f"デコード中にエラーが発生しました (コード: {ret})")
