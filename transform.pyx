@@ -1,4 +1,4 @@
-# cython: boundscheck=False, wraparound=False, nonecheck=False
+# cython: language_level=3, boundscheck=False, wraparound=False, cdivision=True, initializedcheck=False, nonecheck=False
 from cython.parallel import parallel, prange
 
 cdef inline int sft8_sgn(int n) nogil:
@@ -43,45 +43,25 @@ cdef inline void dct_1d_fwd(int i0, int i1, int i2, int i3, int i4, int i5, int 
 	o7 = z11 - z4
 
 cdef inline void dct_1d_bwd(int i0, int i1, int i2, int i3, int i4, int i5, int i6, int i7, int o0, int o1, int o2, int o3, int o4, int o5, int o6, int o7) nogil:
-	cdef int x0, x1, x2, x3, x4, x5, x6, x7, a0, a1, a2, a3, a4, a5, a6, a7, a10, a11, a12, a13
-	# Step 1: Load input
-	x0 = i0
-	x1 = i1
-	x2 = i2
-	x3 = i3
-	x4 = i4
-	x5 = i5
-	x6 = i6
-	x7 = i7
-	
-	# Step 2: Process even coefficients (x0, x2, x4, x6)
+	cdef int x0, x1, x2, x3, x4, x5, x6, x7, a0, a1, a2, a3, a4, a5, a6, a7
 	a0 = i0 + i4
 	a1 = i0 - i4
 	a2 = i2 + i6
-	a3 = sft8_sgn(i2 - i6 * 181)  # 1st multiplication
+	a3 = sft8_sgn((i2 - i6) * 181)
+	a4 = i1 + i7
+	a5 = i5 + i3
+	a6 = i5 - i3
+	a7 = i1 - i7
 	
 	x0 = a0 + a2
 	x2 = a0 - a2
 	x4 = a1 + a3
 	x6 = a1 - a3
-	
-	# Step 3: Process odd coefficients (x1, x3, x5, x7)
-	a10 = i1 + i7
-	a11 = i5 + i3
-	a12 = i5 - i3
-	a13 = i1 - i7
-	
-	a4 = a10 + a11
-	a5 = a10 - a11
-	a6 = a13 + a12
-	a7 = a13 - a12
+	x1 = sft8_sgn((a4 + a5) * 362)
+	x3 = sft8_sgn((a7 + a6) * 98)
+	x5 = sft8_sgn((a4 - a5) * 139)
+	x7 = sft8_sgn((a7 - a6) * 334)
 
-	x1 = sft8_sgn(a4 * 362)
-	x3 = sft8_sgn(a6 * 98)
-	x5 = sft8_sgn(a5 * 139)
-	x7 = sft8_sgn(a7 * 334)
-	
-	# Step 4: Final butterfly
 	o0 = x0 + x1
 	o1 = x4 + x3
 	o2 = x2 + x5
