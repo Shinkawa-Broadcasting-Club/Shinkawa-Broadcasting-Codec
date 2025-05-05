@@ -4,10 +4,12 @@ cimport numpy as cnp
 
 cpdef vs_to_np(i):
 	cdef:
-		cnp.ndarray[cnp.uint16_t, ndim = 4] vid = np.empty((3, i.num_frames, i.height, i.width), np.uint16)
-		unsigned short[:, :, :] y, u, v
-	y = vid[0]; u = vid[1]; v = vid[2]
+		cnp.ndarray[cnp.uint16_t, ndim = 3] y = np.empty((i.num_frames, i.height, i.width), np.uint16)
+		cnp.ndarray[cnp.uint16_t, ndim = 3] u = np.empty((i.num_frames, i.height, i.width), np.uint16)
+		cnp.ndarray[cnp.uint16_t, ndim = 3] v = np.empty((i.num_frames, i.height, i.width), np.uint16)
+		int m
 	for m in range(i.num_frames):
-		for n in range(i.format.num_planes):
-			vid[n, m] = np.asarray(i.get_frame(m)[n], order='C', dtype=np.uint16)
+		y[m] = np.asarray(i.get_frame(m)[0], order='C', dtype=np.uint16)
+		u[m] = np.asarray(i.get_frame(m)[1], order='C', dtype=np.uint16)
+		v[m] = np.asarray(i.get_frame(m)[2], order='C', dtype=np.uint16)
 	return y, u, v
