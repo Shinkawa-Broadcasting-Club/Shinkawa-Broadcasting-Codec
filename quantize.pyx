@@ -1,6 +1,6 @@
 # cython: language_level=3, boundscheck=False, wraparound=False, cdivision=True, embedsignature=True
 
-import cython
+import numpy as np
 cimport numpy as cnp
 from cython.parallel import prange
 
@@ -250,7 +250,7 @@ cdef inline void median_cut_recursive_v2(int* points_flat, int* point_indices, i
     median_cut_recursive_v2(points_flat, point_indices, point_indices_start, partition_idx, num_dimensions, boxes, num_boxes, max_boxes, variance_threshold_sq_scaled)
     median_cut_recursive_v2(points_flat, point_indices, partition_idx, point_indices_end, num_dimensions, boxes, num_boxes, max_boxes, variance_threshold_sq_scaled)
 
-cpdef inline apply_median_cut(int[:, :] points_memview, int num_splits, int variance_threshold):
+cdef inline apply_median_cut(int[:, :] points_memview, int num_splits, int variance_threshold):
     cdef int num_dimensions = points_memview.shape[0]
     cdef int num_points = points_memview.shape[1]
     cdef int max_boxes
@@ -283,7 +283,6 @@ cpdef inline apply_median_cut(int[:, :] points_memview, int num_splits, int vari
     for i in prange(num_points, schedule='static', nogil=True): original_indices[i] = i
     variance_threshold_sq_scaled = <long long>variance_threshold * 256 * 256
     median_cut_recursive_v2(points_flat, original_indices, 0, num_points, num_dimensions, boxes, num_boxes_ptr, max_boxes, variance_threshold_sq_scaled)
-    import numpy as np
     cdef cnp.ndarray[int, ndim=1] box_indices_np = np.full(num_points, -1, dtype=np.intc)
     cdef cnp.ndarray[int, ndim=2] codebook_np = np.empty((num_boxes_actual, num_dimensions), dtype=np.intc)
     for i in range(num_boxes_actual):
@@ -298,3 +297,18 @@ cpdef inline apply_median_cut(int[:, :] points_memview, int num_splits, int vari
     free(original_indices)
     free(boxes)
     return box_indices_np, codebook_np
+
+cpdef inline median_cut(cnp.ndarray[cnp.int32_t, ndim=3] arr):
+    cdef int x = <int> arr.shape[0]
+    cdef int y = <int> arr.shape[1]
+    cdef int z = <int> arr.shape[2]
+    cdef cnp.ndarray[cnp.int32_t, ndim=3] out = np.empty((x, y, z), np.int32)
+    cdef cnp.ndarray[cnp.int32_t, ndim=2] tmp_in = np.empty((6, (x >> 3) * (y >> 3) * (z >> 3)), np.int32)
+    cdef cnp.ndarray[cnp.int32_t, ndim=2] tmp_out = np.empty(((x >> 3) * (y >> 3) * (z >> 3)), np.int32)
+    cdef int[:, :] tin
+    cdef int[120][3] combi = [[0, 0, 0], [0, 0, 1], [0, 0, 2], [0, 0, 3], [0, 0, 4], [0, 0, 5], [0, 0, 6], [0, 0, 7], [0, 1, 1], [0, 1, 2], [0, 1, 3], [0, 1, 4], [0, 1, 5], [0, 1, 6], [0, 1, 7], [0, 2, 2], [0, 2, 3], [0, 2, 4], [0, 2, 5], [0, 2, 6], [0, 2, 7], [0, 3, 3], [0, 3, 4], [0, 3, 5], [0, 3, 6], [0, 3, 7], [0, 4, 4], [0, 4, 5], [0, 4, 6], [0, 4, 7], [0, 5, 5], [0, 5, 6], [0, 5, 7], [0, 6, 6], [0, 6, 7], [0, 7, 7], [1, 1, 1], [1, 1, 2], [1, 1, 3], [1, 1, 4], [1, 1, 5], [1, 1, 6], [1, 1, 7], [1, 2, 2], [1, 2, 3], [1, 2, 4], [1, 2, 5], [1, 2, 6], [1, 2, 7], [1, 3, 3], [1, 3, 4], [1, 3, 5], [1, 3, 6], [1, 3, 7], [1, 4, 4], [1, 4, 5], [1, 4, 6], [1, 4, 7], [1, 5, 5], [1, 5, 6], [1, 5, 7], [1, 6, 6], [1, 6, 7], [1, 7, 7], [2, 2, 2], [2, 2, 3], [2, 2, 4], [2, 2, 5], [2, 2, 6], [2, 2, 7], [2, 3, 3], [2, 3, 4], [2, 3, 5], [2, 3, 6], [2, 3, 7], [2, 4, 4], [2, 4, 5], [2, 4, 6], [2, 4, 7], [2, 5, 5], [2, 5, 6], [2, 5, 7], [2, 6, 6], [2, 6, 7], [2, 7, 7], [3, 3, 3], [3, 3, 4], [3, 3, 5], [3, 3, 6], [3, 3, 7], [3, 4, 4], [3, 4, 5], [3, 4, 6], [3, 4, 7], [3, 5, 5], [3, 5, 6], [3, 5, 7], [3, 6, 6], [3, 6, 7], [3, 7, 7], [4, 4, 4], [4, 4, 5], [4, 4, 6], [4, 4, 7], [4, 5, 5], [4, 5, 6], [4, 5, 7], [4, 6, 6], [4, 6, 7], [4, 7, 7], [5, 5, 5], [5, 5, 6], [5, 5, 7], [5, 6, 6], [5, 6, 7], [5, 7, 7], [6, 6, 6], [6, 6, 7], [6, 7, 7], [7, 7, 7]]
+    cdef int a, b, c, d
+    for a in range(120):
+        for b in prange(x >> 3):
+            for c in prange(y >> 3):
+                for d in prange(z >> 3):
